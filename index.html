@@ -273,7 +273,7 @@ class Matreshka {
     } catch {}
 
     // 3) Если не JSON — вернём сырое
-    return { ok: resp.ok, status: resp.status, contentType: resp.headers.get(\"content-type\"), raw: (text1251 ?? textUtf8) };
+    return { ok: resp.ok, status: resp.status, contentType: resp.headers.get("content-type"), raw: (text1251 ?? textUtf8) };
   }
 
   // Публичный хелпер: дернуть любой URL (через прокси, если включен)
