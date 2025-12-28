@@ -3,774 +3,529 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Matreshka API — браузерный демо-клиент</title>
+  <title>Matreshka API (Browser Demo)</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;max-width:980px}
-    h1{margin:0 0 8px}
-    .muted{color:#666}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
-    .card{border:1px solid #ddd;border-radius:12px;padding:16px}
-    label{display:block;margin:10px 0 6px}
-    input,select,button,textarea{font:inherit}
-    input,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:10px}
-    button{padding:10px 12px;border:1px solid #ccc;border-radius:10px;background:#fff;cursor:pointer;margin:6px 6px 0 0}
-    button.primary{border-color:#333}
-    button:disabled{opacity:.6;cursor:not-allowed}
-    pre{white-space:pre-wrap;word-break:break-word;background:#0b1020;color:#e6e6e6;padding:12px;border-radius:12px;min-height:160px}
-    .row{display:flex;gap:10px;flex-wrap:wrap}
-    .pill{display:inline-block;padding:4px 10px;border:1px solid #ddd;border-radius:999px;font-size:12px;margin-right:8px}
-    .danger{color:#b00020}
-    .ok{color:#0a7}
-    small code{background:#f5f5f5;padding:2px 6px;border-radius:6px}
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; background:#0b0f14; color:#e6edf3; }
+    .grid { display:grid; grid-template-columns: 1fr; gap: 14px; max-width: 1100px; margin: 0 auto; }
+    .card { background:#111826; border:1px solid #223044; border-radius: 12px; padding: 12px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    h2 { font-size: 14px; margin: 0 0 10px; color:#c6d6ff; }
+    label { display:block; font-size: 12px; opacity:.9; margin: 8px 0 4px; }
+    input, select, textarea, button { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #2b3a52; background:#0b1220; color:#e6edf3; }
+    textarea { min-height: 90px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .row { display:flex; gap: 10px; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 180px; }
+    button { cursor:pointer; background:#16233a; }
+    button:hover { background:#1b2b47; }
+    .small { font-size: 12px; opacity: .85; line-height: 1.35; }
+    pre { white-space: pre-wrap; word-break: break-word; background:#0a1220; border:1px solid #223044; border-radius: 12px; padding: 10px; margin: 8px 0 0; }
+    .ok { color:#9cffc6; }
+    .bad { color:#ffb4b4; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #2b3a52; font-size:12px; opacity:.95; }
   </style>
 </head>
 <body>
-  <h1>Matreshka API — демо из браузера</h1>
-  <div class="muted">
-    Это минимальный сайт, который запускает твой JS-клиент прямо в браузере.
-    <span class="pill" id="status">не авторизован</span>
-    <span class="pill" id="devicePill"></span>
-  </div>
-
-  <p class="danger">
-    Важно: пароль уходит в URL (GET-запрос) — так устроен их API. Не используй реальный пароль на чужих сайтах и не делай это на «чужом» компьютере.
-  </p>
-
   <div class="grid">
     <div class="card">
-      <h3>1) Авторизация / Регистрация</h3>
-
-      <label>Email</label>
-      <input id="email" type="email" placeholder="mail@example.com" autocomplete="username" />
-
-      <label>Пароль</label>
-      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
-
-      <label>Прокси (Cloudflare Worker URL, опционально)</label>
-      <input id="proxy" type="url" placeholder="https://<name>.workers.dev/?url=" />
-
-      <label>Код подтверждения (для регистрации)</label>
-      <input id="code" type="text" placeholder="1234" inputmode="numeric" />
-
-      <div class="row">
-        <button class="primary" id="btnLogin">Login</button>
-        <button id="btnReqCode">Запросить код</button>
-        <button id="btnRegister">Register</button>
-        <button id="btnLogout">Сбросить сессию</button>
+      <h1>Matreshka API (Browser Demo)</h1>
+      <div class="small">
+        Этот демо-сайт дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует запросы).
+        Для авторизованных запросов ты вручную держишь <span class="pill">accountId</span> и <span class="pill">sessionHash</span>.
       </div>
-
-      <p class="muted">
-        Подсказка по регистрации: сначала жми <b>«Запросить код»</b>, дождись письма, введи код и только потом <b>Register</b>.
-      </p>
-
-      <p class="muted">
-        В браузере нельзя вручную поставить заголовок <code>User-Agent</code> — он игнорируется (ограничение безопасности браузеров).
-        Если сервер реально требует мобильный UA, понадобится прокси (см. README).
-      </p>
     </div>
 
     <div class="card">
-      <h3>2) Запросы</h3>
+      <h2>Сессия</h2>
 
-      <label>Метод</label>
-      <select id="method">
-        <option value="getStories">getStories</option>
-        <option value="getServers">getServers</option>
-        <option value="getSocialBonusInfo">getSocialBonusInfo</option>
-        <option value="getAccountDetails">getAccountDetails</option>
-        <option value="getCabinet">getCabinet</option>
-        <option value="getFaq">getFaq</option>
-        <option value="getAudios">getAudios</option>
-        <option value="getRadios">getRadios</option>
-        <option value="getUpdate">getUpdate</option>
-      </select>
+      <label>proxyBase (Cloudflare Worker)</label>
+      <input id="proxyBase" type="text" placeholder="https://xxx.workers.dev/?url=" />
 
       <div class="row">
-        <button class="primary" id="btnCall">Выполнить</button>
-        <button id="btnCopy">Копировать JSON</button>
-        <button id="btnClear">Очистить</button>
+        <div>
+          <label>deviceHash</label>
+          <input id="deviceHash" type="text" />
+        </div>
+        <div>
+          <label>client</label>
+          <select id="client">
+            <option value="prod" selected>prod</option>
+            <option value="google">google</option>
+            <option value="appgallery">appgallery</option>
+            <option value="rustore">rustore</option>
+          </select>
+        </div>
       </div>
 
-      <p class="muted">
-        Если получишь ошибку <code>CORS</code> — это значит, что API не разрешает запросы из браузера напрямую.
-        Тогда включай прокси-режим (README).
-      </p>
-    </div>
-  </div>
+      <div class="row">
+        <div>
+          <label>accountId</label>
+          <input id="accountId" type="number" />
+        </div>
+        <div>
+          <label>sessionHash</label>
+          <input id="sessionHash" type="text" />
+        </div>
+      </div>
 
-  <div class="grid">
+      <div class="row">
+        <button id="btnSave">Save (localStorage)</button>
+        <button id="btnLoad">Load</button>
+        <button id="btnNewDevice">New deviceHash</button>
+      </div>
+
+      <div class="small">
+        Совет: после обновления GitHub Pages делай <b>Ctrl+F5</b> или открывай в инкогнито — иначе кеш.
+      </div>
+    </div>
+
     <div class="card">
-      <h3>3) Сессия</h3>
+      <h2>Публичные конфиги (без авторизации)</h2>
       <div class="row">
-        <button id="btnShowSession" class="primary">Показать сессию</button>
-        <button id="btnClearSession">Очистить сессию</button>
-        <button id="btnCopySession">Копировать</button>
-        <button id="btnResetDeviceHash" title="Сбросит deviceHash. Старые коды регистрации могут стать недействительными.">Сбросить deviceHash</button>
+        <button id="btnUpdate">GET update.php</button>
+        <button id="btnMain">GET api/main.json</button>
+        <button id="btnServersJson">GET servers.json</button>
       </div>
-      <p class="muted">
-        Их “токен” — это обычно <code>sessionHash</code> (в ответах часто <code>session_hash</code>) + <code>accountId</code> + <code>deviceHash</code>. Для регистрации <code>deviceHash</code> должен оставаться тем же между «Запросить код» и «Register» (в v8 он сохраняется в localStorage).
-      </p>
-      <pre id="sessionOut">{}</pre>
+
+      <label>files_list URL (берётся из update.php или вставь вручную)</label>
+      <div class="row">
+        <input id="filesListUrl" type="text" placeholder="https://moblauncher.matrp.ru/files_list/build1411.json" />
+        <button id="btnFilesList">GET files_list</button>
+      </div>
     </div>
 
     <div class="card">
-      <h3>4) Доп. эндпоинты (main.json)</h3>
-
-      <label>Server IP (для SelectServer/Play, если нужно)</label>
-      <input id="srvIp" type="text" placeholder="91.220.80.10" />
-
-      <label>Server Port</label>
-      <input id="srvPort" type="number" placeholder="7777" />
-
-      <label>Auth type</label>
-      <input id="authType" type="text" value="email" placeholder="email / device / guest (если есть)" />
-
-      <label>Auth subtype</label>
-      <input id="authSubtype" type="text" value="auth" placeholder="auth / register / register_code / ..." />
-
-      <label>Email (необязательно для device/guest)</label>
-      <input id="authEmail" type="email" placeholder="user@example.com" />
-
-      <label>Пароль (если требуется)</label>
-      <input id="authPass" type="password" placeholder="Пароль" />
-
-      <label>Код (для register_code)</label>
-      <input id="authCode" type="text" placeholder="123456" />
+      <h2>Email auth</h2>
+      <div class="small">
+        Здесь запросы идут через <b>POST</b> (пароль не попадает в URL страницы, но всё равно виден в DevTools / логах прокси).
+      </div>
 
       <div class="row">
-        <button id="btnAuthCustom" class="primary">Auth (custom)</button>
+        <div>
+          <label>email</label>
+          <input id="email" type="text" placeholder="name@example.com" />
+        </div>
+        <div>
+          <label>password</label>
+          <input id="pass" type="password" />
+        </div>
       </div>
 
-      <p class="muted">
-        Если в официальном лаунчере есть «Гость», то почти наверняка он получает <code>accountId</code> и <code>sessionHash</code> через <code>Auth.php</code> с другим <code>type</code> (часто <code>device</code>) и/или другим <code>subtype</code>.
-        Попробуй варианты: <code>type=device</code> + <code>subtype=auth</code>, или <code>type=guest</code> + <code>subtype=auth</code>.
-      </p>
-
-<div class="row">
-        <button id="btnVerifyAuth" class="primary">VerifyAuth</button>
-        <button id="btnCharacter">Character</button>
-        <button id="btnSelectServer">SelectServer</button>
-        <button id="btnPlay">Play</button>
-        <button id="btnLogout">Logout</button>
+      <div class="row">
+        <button id="btnLogin">Login (type=email, subtype=auth)</button>
+        <button id="btnRegStart">Register (type=email, subtype=register)</button>
       </div>
 
-      <p class="muted">
-        Точные параметры <code>SelectServer</code>/<code>Play</code> могут отличаться (сервер может ждать id/slot/host/port).
-        Если вернётся ошибка — просто смотри JSON и подстроим параметры.
-      </p>
+      <div class="row">
+        <div>
+          <label>verification code</label>
+          <input id="code" type="text" />
+        </div>
+        <button id="btnRegFinish">Register code (subtype=register_code)</button>
+      </div>
 
-      <pre id="advOut">{}</pre>
+      <label style="display:flex; gap:8px; align-items:center; margin:10px 0 0;">
+        <input id="authIncludeSession" type="checkbox" />
+        <span class="small">Добавлять accountId/sessionHash в Auth (обычно не нужно)</span>
+      </label>
     </div>
-  </div>
 
-  <h3>Ответ</h3>
-  <pre id="out">{}</pre>
-
-  <h3>Последняя версия (update.php)</h3>
-  <div class="card">
-    <div class="row" style="align-items:center;justify-content:space-between">
-      <div class="muted">
-        Этот эндпоинт обычно работает даже без логина (accountId=-1) и возвращает ссылки на клиент/лаунчер, files_list и архивы.
+    <div class="card">
+      <h2>Авторизованные запросы</h2>
+      <div class="row">
+        <button id="btnServersApi">GET /api/Requests/Servers.php</button>
+        <button id="btnAccount">GET /api/Requests/AccountDetails.php</button>
+        <button id="btnCabinet">GET /api/Requests/Cabinet.php</button>
       </div>
-      <div class="row" style="align-items:center">
-        <label style="margin:0;display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="autoUpdate" checked />
-          Автозагрузка при открытии
-        </label>
-        <button class="primary" id="btnLatest">Обновить</button>
+
+      <div class="row">
+        <div>
+          <label>Server host</label>
+          <input id="srvHost" type="text" placeholder="91.220.80.xx" />
+        </div>
+        <div>
+          <label>Server port</label>
+          <input id="srvPort" type="number" placeholder="7777" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="btnSelectServer">SelectServer.php</button>
+        <button id="btnPlay">Play.php</button>
       </div>
     </div>
-    <pre id="latest">{}</pre>
-    <div class="row" style="margin-top:10px;align-items:center">
-      <button id="btnFilesList">Загрузить files_list</button>
-      <button id="btnFilesListSummary">Показать сводку</button>
-      <span class="muted" id="filesListHint"></span>
+
+    <div class="card">
+      <h2>Custom request</h2>
+      <div class="row">
+        <div>
+          <label>URL</label>
+          <input id="customUrl" type="text" placeholder="https://moblauncher.matrp.ru/servers.json" />
+        </div>
+        <div>
+          <label>Method</label>
+          <select id="customMethod">
+            <option value="GET" selected>GET</option>
+            <option value="POST">POST</option>
+          </select>
+        </div>
+      </div>
+
+      <label>POST form (key=value&...)</label>
+      <textarea id="customBody" placeholder="type=email&subtype=auth&action=continue&email=...&pass=..."></textarea>
+
+      <div class="row">
+        <button id="btnCustom">Send</button>
+        <button id="btnDebugUpstream">Worker debug=1</button>
+      </div>
+
+      <div class="small">
+        Debug вернёт статус/headers/первые байты ответа апстрима (удобно, когда вместо JSON прилетает HTML или пусто).
+      </div>
     </div>
-    <pre id="filesListOut">{}</pre>
+
+    <div class="card">
+      <h2>Output</h2>
+      <pre id="out">(ready)</pre>
+    </div>
   </div>
 
 <script>
-/**
- * Matreshka — браузерная адаптация твоего класса.
- * Отличия от Node-версии:
- * 1) НЕТ module.exports
- * 2) Нельзя выставить user-agent header
- * 3) Исправлен deviceHash: он должен быть строкой, а не ссылкой на функцию
- */
-function loadDeviceHash(){
-  try { return localStorage.getItem("matreshka_deviceHash") || ""; } catch { return ""; }
-}
-function saveDeviceHash(v){
-  try { localStorage.setItem("matreshka_deviceHash", v || ""); } catch {}
-}
+(function () {
+  // ---- helpers ----
+  function qs(id) { return document.getElementById(id); }
 
-class Matreshka {
-  constructor(opts = {}) {
-    this.api = opts.api || "https://moblauncher.matrp.ru";
-    this.client = opts.client || "prod";
-    this.accountId = -1;
-    this.sessionHash = "";
-    this.deviceHash = loadDeviceHash() || this.generateDeviceHash();
-    saveDeviceHash(this.deviceHash); // <-- FIX
-    // headers оставим, но user-agent браузер всё равно не даст поставить
-    this.headers = opts.headers || {};
-    // Если нужен прокси: opts.proxyBase = "https://<твоя_функция>/proxy?url="
-    this.proxyBase = opts.proxyBase || null;
+  function randDeviceHash() {
+    var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    var s = "";
+    for (var i = 0; i < 16; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+    return s;
   }
 
-  generateDeviceHash() {
-    let hash = "";
-    const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 16; i++) {
-      hash += characters.charAt(Math.floor(Math.random() * characters.length));
+  function parseForm(text) {
+    // Accept "k=v&k2=v2" or lines "k=v"
+    var obj = {};
+    if (!text) return obj;
+    var t = String(text).trim();
+    if (!t) return obj;
+
+    var parts = t.indexOf("&") !== -1 ? t.split("&") : t.split(/\n+/);
+    for (var i = 0; i < parts.length; i++) {
+      var p = String(parts[i] || "").trim();
+      if (!p) continue;
+      var eq = p.indexOf("=");
+      if (eq === -1) continue;
+      var k = decodeURIComponent(p.slice(0, eq).trim());
+      var v = decodeURIComponent(p.slice(eq + 1).trim());
+      obj[k] = v;
     }
-    return hash;
+    return obj;
   }
 
-  _q(params) {
-    const usp = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) {
-      if (v === undefined || v === null) continue;
-      usp.set(k, String(v));
+  function buildFormBody(obj) {
+    var parts = [];
+    for (var k in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      var v = obj[k];
+      if (v === undefined || v === null) v = "";
+      parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(String(v)));
     }
-    return usp.toString();
+    return parts.join("&");
   }
 
-  _withAuthParams(extra = {}) {
-    return {
-      accountId: this.accountId,
-      sessionHash: this.sessionHash,
-      deviceHash: this.deviceHash,
-      client: this.client,
-      ...extra
-    };
-  }
-
-  async _fetchJson(url) {
-    const finalUrl = this.proxyBase ? (this.proxyBase + encodeURIComponent(url)) : url;
-    const resp = await fetch(finalUrl, { method: "GET", headers: this.headers });
-
-    // ВАЖНО: некоторые их JSON-ы могут быть НЕ в UTF-8 (часто Windows-1251), из-за чего в браузере появляется '������'.
-    // Поэтому читаем как bytes и пробуем декодировать UTF-8 -> fallback windows-1251.
-    const ab = await resp.arrayBuffer();
-
-    const tryParse = (text) => {
-      try { return { ok: true, value: JSON.parse(text) }; }
-      catch { return { ok: false, value: null }; }
-    };
-
-    // 1) UTF-8 (по стандарту JSON должен быть UTF-8, но жизнь любит хаос)
-    let textUtf8 = new TextDecoder("utf-8").decode(ab);
-    let parsed = tryParse(textUtf8);
-    if (parsed.ok) return parsed.value;
-
-    // 2) Fallback: Windows-1251 (для кириллицы)
-    let text1251 = null;
+  function setOut(o, ok) {
+    var el = qs("out");
     try {
-      text1251 = new TextDecoder("windows-1251").decode(ab);
-      parsed = tryParse(text1251);
-      if (parsed.ok) return parsed.value;
-    } catch {}
-
-    // 3) Если не JSON — вернём сырое
-    return { ok: resp.ok, status: resp.status, contentType: resp.headers.get("content-type"), raw: (text1251 ?? textUtf8) };
-  }
-
-  // Публичный хелпер: дернуть любой URL (через прокси, если включен)
-  async fetchUrl(url) {
-    return this._fetchJson(url);
-  }
-
-  async login(email, password) {
-    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
-      type: "email",
-      subtype: "auth",
-      action: "continue",
-      email,
-      pass: password
-    }));
-    const data = await this._fetchJson(url);
-    // Подстраховка: структура ответа может отличаться
-    const action0 = data?.actions?.[0];
-    if (action0 && ("account_id" in action0)) {
-      this.accountId = action0.account_id;
-      this.sessionHash = action0.session_hash;
+      el.textContent = (typeof o === "string") ? o : JSON.stringify(o, null, 2);
+    } catch (e) {
+      el.textContent = String(o);
     }
-    return data;
+    el.className = ok ? "ok" : "bad";
   }
 
-  async requestVerificationCode(email, password) {
-    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
-      type: "email",
-      subtype: "register",
-      action: "continue",
-      email,
-      pass: password,
-      repeat_pass: password
-    }));
-    return this._fetchJson(url);
-  }
-
-  async register(email, password, verificationCode) {
-    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
-      type: "email",
-      subtype: "register_code",
-      action: "continue",
-      email,
-      pass: password,
-      repeat_pass: password,
-      code: verificationCode
-    }));
-    return this._fetchJson(url);
-  }
-
-  async authCustom(type, subtype, extra = {}) {
-    const base = {
-      type,
-      subtype,
-      action: "continue",
-      ...extra,
-    };
-    // Auth.php использует те же accountId/sessionHash/deviceHash/client что и другие запросы
-    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams(base));
-    return this._fetchJson(url);
-  }
-
-  async getStories() {
-    const url = `${this.api}/api/Requests/Stories.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getServers() {
-    const url = `${this.api}/api/Requests/Servers.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getSocialBonusInfo() {
-    const url = `${this.api}/api/Requests/SocialBonusInfo.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getAccountDetails() {
-    const url = `${this.api}/api/Requests/AccountDetails.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getCabinet() {
-    const url = `${this.api}/api/Requests/Cabinet.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async changePassword(password) {
-    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
-      type: "email",
-      subtype: "changepass_old",
-      action: "continue",
-      pass: password
-    }));
-    return this._fetchJson(url);
-  }
-  async getFaq() {
-    const url = `${this.api}/api/Requests/FAQ.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getAudios() {
-    const url = `${this.api}/audio_list.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getRadios() {
-    const url = `${this.api}/radio_list.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-  async getUpdate() {
-    const url = `${this.api}/update.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-
-  async verifyAuth() {
-    const url = `${this.api}/api/Requests/VerifyAuth.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-
-  async logout() {
-    const url = `${this.api}/api/Requests/Logout.php?` + this._q(this._withAuthParams());
-    return this._fetchJson(url);
-  }
-
-  async character(extra = {}) {
-    const url = `${this.api}/api/Requests/Character.php?` + this._q(this._withAuthParams(extra));
-    return this._fetchJson(url);
-  }
-
-  async selectServer(extra = {}) {
-    const url = `${this.api}/api/Requests/SelectServer.php?` + this._q(this._withAuthParams(extra));
-    return this._fetchJson(url);
-  }
-
-  async play(extra = {}) {
-    const url = `${this.api}/api/Requests/Play.php?` + this._q(this._withAuthParams(extra));
-    return this._fetchJson(url);
-  }
-}
-
-// --- UI wiring ---
-const out = document.getElementById("out");
-const statusEl = document.getElementById("status");
-const devicePill = document.getElementById("devicePill");
-const emailEl = document.getElementById("email");
-const passEl  = document.getElementById("password");
-const codeEl  = document.getElementById("code");
-const methodEl = document.getElementById("method");
-const sessionOut = document.getElementById("sessionOut");
-const advOut = document.getElementById("advOut");
-const btnShowSession = document.getElementById("btnShowSession");
-const btnClearSession = document.getElementById("btnClearSession");
-const btnCopySession = document.getElementById("btnCopySession");
-const btnResetDeviceHash = document.getElementById("btnResetDeviceHash");
-const btnVerifyAuth = document.getElementById("btnVerifyAuth");
-const btnLogout2 = document.getElementById("btnLogout");
-const btnSelectServer = document.getElementById("btnSelectServer");
-const btnPlay = document.getElementById("btnPlay");
-const btnCharacter = document.getElementById("btnCharacter");
-const srvIpEl = document.getElementById("srvIp");
-const srvPortEl = document.getElementById("srvPort");
-const authTypeEl = document.getElementById("authType");
-const authSubtypeEl = document.getElementById("authSubtype");
-const authEmailEl = document.getElementById("authEmail");
-const authPassEl = document.getElementById("authPass");
-const authCodeEl = document.getElementById("authCode");
-const btnAuthCustom = document.getElementById("btnAuthCustom");
-const latestEl = document.getElementById("latest");
-const btnLatest = document.getElementById("btnLatest");
-const autoUpdateEl = document.getElementById("autoUpdate");
-const btnFilesList = document.getElementById("btnFilesList");
-const btnFilesListSummary = document.getElementById("btnFilesListSummary");
-const filesListOut = document.getElementById("filesListOut");
-const filesListHint = document.getElementById("filesListHint");
-
-function pretty(x){ return JSON.stringify(x, null, 2); }
-function setOut(x){ out.textContent = pretty(x); }
-function bytesToGiB(n){
-  const giB = n / (1024*1024*1024);
-  return (Math.round(giB*100)/100) + " GiB";
-}
-
-function summarizeUpdate(data){
-  // Если это не объект с полями версии — покажем как есть
-  if (!data || typeof data !== "object" || Array.isArray(data)) return data;
-
-  const res = {
-    client_version: data.client_version,
-    client_url: data.client_url,
-    launcher_version: data.launcher_version,
-    launcher_url: data.launcher_url,
-    files_list: data.files_list,
-    api: data.api,
-    servers_list: data.servers_list,
-    audio_list: data.audio_list,
-    radio_list: data.radio_list,
-    archives: Array.isArray(data.archives) ? data.archives.map(a => ({
-      type: a.type,
-      size: (typeof a.size === "number") ? bytesToGiB(a.size) : a.size,
-      urls: a.urls
-    })) : data.archives
+  // ---- session ----
+  var state = {
+    api: "https://moblauncher.matrp.ru",
+    proxyBase: "",
+    deviceHash: "",
+    client: "prod",
+    accountId: -1,
+    sessionHash: ""
   };
 
-  // чистка undefined
-  Object.keys(res).forEach(k => (res[k] === undefined ? delete res[k] : 0));
-  return res;
-}
-
-
-function getSessionSnapshot(){
-  return {
-    accountId: m.accountId,
-    sessionHash: m.sessionHash,
-    deviceHash: m.deviceHash,
-    client: m.client,
-    proxyBase: m.proxyBase || null
-  };
-}
-
-function setSessionOut(x){
-  if (!sessionOut) return;
-  sessionOut.textContent = pretty(x);
-}
-
-function setAdvOut(x){
-  if (!advOut) return;
-  advOut.textContent = pretty(x);
-}
-
-function saveSession(m) {
-  const s = { accountId: m.accountId, sessionHash: m.sessionHash, deviceHash: m.deviceHash };
-  localStorage.setItem("matreshka_session", JSON.stringify(s));
-}
-function loadSession(m) {
-  try {
-    const s = JSON.parse(localStorage.getItem("matreshka_session") || "null");
-    if (!s) return;
-    m.accountId = s.accountId ?? -1;
-    m.sessionHash = (s.sessionHash ?? "");
-    m.deviceHash = s.deviceHash || m.deviceHash;
-  } catch {}
-}
-
-let lastUpdateData = null;
-
-async function loadFilesList(){
-  if (!filesListOut) return;
-  const url = lastUpdateData?.files_list;
-  if (!url) {
-    filesListOut.textContent = pretty({ error: "Нет files_list. Сначала нажми 'Обновить' в update.php." });
-    return;
-  }
-  filesListOut.textContent = pretty({loading:true, url});
-  try{
-    const data = await m.fetchUrl(url);
-    window.__filesListRaw = data; // для отладки/сводки
-    filesListOut.textContent = pretty(data);
-  }catch(e){
-    filesListOut.textContent = pretty({error:String(e), url});
-  }
-}
-
-function summarizeFilesList(data){
-  if (!data || typeof data !== "object") return data;
-
-  // Попробуем угадать структуру: либо массив, либо объект с полем files/items
-  const arr =
-    Array.isArray(data) ? data :
-    Array.isArray(data.files) ? data.files :
-    Array.isArray(data.items) ? data.items :
-    Array.isArray(data.list) ? data.list :
-    null;
-
-  if (!arr) {
-    // неизвестная структура — покажем ключи верхнего уровня
-    return {
-      note: "Не удалось распознать массив файлов. Показываю ключи верхнего уровня.",
-      keys: Object.keys(data).slice(0, 50)
-    };
-  }
-
-  // Подсчеты по расширениям и папкам
-  const extCount = {};
-  const dirCount = {};
-  let sample = [];
-
-  for (let i = 0; i < arr.length; i++) {
-    const it = arr[i];
-    const path = (it?.path || it?.file || it?.name || it?.url || "").toString();
-    if (path) {
-      const parts = path.split("/");
-      const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : "(root)";
-      dirCount[dir] = (dirCount[dir] || 0) + 1;
-
-      const m = path.match(/\.([a-z0-9]+)(\?|$)/i);
-      const ext = m ? m[1].toLowerCase() : "(none)";
-      extCount[ext] = (extCount[ext] || 0) + 1;
-    }
-    if (sample.length < 20) sample.push(it);
-  }
-
-  // Top dirs/exts
-  function top(obj, n=15){
-    return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,v])=>({k,v}));
-  }
-
-  return {
-    total: arr.length,
-    top_extensions: top(extCount, 15),
-    top_dirs: top(dirCount, 15),
-    sample_first_20: sample
-  };
-}
-
-async function loadLatestUpdate(){
-  if (!latestEl) return;
-  latestEl.textContent = pretty({loading:true});
-  try{
-    const data = await m.getUpdate();
-    lastUpdateData = data;
-    latestEl.textContent = pretty(summarizeUpdate(data));
-    if (filesListHint) filesListHint.textContent = data?.files_list ? (`files_list: ${data.files_list}`) : '';
-  }catch(e){
-    latestEl.textContent = pretty({error:String(e)});
-  }
-}
-
-function renderStatus(m) {
-  const ok = m.accountId && m.accountId !== -1 && m.sessionHash;
-  statusEl.textContent = ok ? `авторизован (accountId=${m.accountId})` : "не авторизован";
-  statusEl.className = "pill " + (ok ? "ok" : "");
-  devicePill.textContent = `deviceHash=${m.deviceHash}` + (m.proxyBase ? ` | proxy=ON` : ` | proxy=OFF`);
-}
-
-const proxyEl = document.getElementById("proxy");
-// Вставь сюда URL воркера, например: https://<name>.workers.dev/?url=
-const DEFAULT_PROXY_BASE = "";
-const m = new Matreshka({
-  proxyBase: DEFAULT_PROXY_BASE || null
-});
-// Подхватить прокси из localStorage (если уже вводил)
-try {
-  const savedProxy = localStorage.getItem("matreshka_proxyBase");
-  if (savedProxy) {
-    m.proxyBase = savedProxy;
-    proxyEl.value = savedProxy;
-  }
-} catch {}
-// Сохранять прокси при изменении
-proxyEl.addEventListener("change", () => {
-  const v = proxyEl.value.trim();
-  m.proxyBase = v ? v : null;
-  try { localStorage.setItem("matreshka_proxyBase", m.proxyBase || ""); } catch {}
-});
-loadSession(m);
-renderStatus(m);
-
-async function run(fn) {
-  try {
-    setOut({loading:true});
-    const res = await fn();
-    setOut(res);
-    saveSession(m);
-    renderStatus(m);
-  } catch (e) {
-    setOut({ error: String(e), hint: "Если это CORS — смотри README про прокси." });
-  }
-}
-
-document.getElementById("btnLogin").onclick = () =>
-  run(() => m.login(emailEl.value.trim(), passEl.value));
-
-document.getElementById("btnReqCode").onclick = () =>
-  run(() => m.requestVerificationCode(emailEl.value.trim(), passEl.value));
-
-document.getElementById("btnRegister").onclick = () =>
-  run(() => m.register(emailEl.value.trim(), passEl.value, codeEl.value.trim()));
-
-document.getElementById("btnCall").onclick = () =>
-  run(() => m[methodEl.value]());
-
-document.getElementById("btnLogout").onclick = () => {
-  localStorage.removeItem("matreshka_session");
-  m.accountId = -1;
-  m.sessionHash = "";
-  m.deviceHash = m.generateDeviceHash();
-  renderStatus(m);
-  setOut({});
-};
-
-document.getElementById("btnCopy").onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(out.textContent || "");
-  } catch (e) {
-    alert("Не удалось скопировать: " + e);
-  }
-};
-
-document.getElementById("btnClear").onclick = () => setOut({});
-
-if (btnShowSession) btnShowSession.addEventListener("click", () => setSessionOut(getSessionSnapshot()));
-if (btnClearSession) btnClearSession.addEventListener("click", () => {
-  localStorage.removeItem("matreshka_session");
-  m.accountId = -1;
-  m.sessionHash = "";
-  m.deviceHash = m.generateDeviceHash();
-  renderStatus(m);
-  setSessionOut(getSessionSnapshot());
-});
-if (btnCopySession) btnCopySession.addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(pretty(getSessionSnapshot())); } catch (e) { alert("Не удалось скопировать: " + e); }
-});
-if (btnResetDeviceHash) btnResetDeviceHash.addEventListener("click", () => {
-  // Внимание: это ломает непройденную регистрацию (код может стать недействительным)
-  m.deviceHash = m.generateDeviceHash();
-  saveDeviceHash(m.deviceHash);
-  renderStatus(m);
-  setSessionOut(getSessionSnapshot());
-  alert("deviceHash сброшен. Если ты ждешь код регистрации — запроси его заново.");
-});
-
-async function runAdv(fn){
-  try { setAdvOut({loading:true}); const res = await fn(); setAdvOut(res); saveSession(m); renderStatus(m); }
-  catch(e){ setAdvOut({error:String(e)}); }
-}
-
-if (btnVerifyAuth) btnVerifyAuth.addEventListener("click", () => runAdv(() => m.verifyAuth()));
-if (btnAuthCustom) btnAuthCustom.addEventListener("click", () => {
-  const type = (authTypeEl?.value || "").trim() || "email";
-  const subtype = (authSubtypeEl?.value || "").trim() || "auth";
-  const email = (authEmailEl?.value || "").trim();
-  const pass = (authPassEl?.value || "").trim();
-  const code = (authCodeEl?.value || "").trim();
-
-  const extra = {};
-  // Добавляем параметры только если они не пустые
-  if (email) extra.email = email;
-  if (pass) {
-    extra.pass = pass;
-    extra.repeat_pass = pass;
-  }
-  if (code) extra.code = code;
-
-  return runAdv(async () => {
-    const res = await m.authCustom(type, subtype, extra);
-
-    // Попробуем автоматически подхватить сессию из типовых структур ответа
+  function loadState() {
     try {
-      const a0 = res?.actions?.[0] || res?.action || null;
-      const accountId = a0?.account_id ?? a0?.accountId ?? res?.account_id ?? res?.accountId;
-      const sessionHash = a0?.session_hash ?? a0?.sessionHash ?? res?.session_hash ?? res?.sessionHash;
-      if (accountId !== undefined && accountId !== null) m.accountId = accountId;
-      if (sessionHash !== undefined && sessionHash !== null) m.sessionHash = sessionHash;
-    } catch {}
-
-    saveSession(m);
-    renderStatus(m);
-    setSessionOut(getSessionSnapshot());
-    return res;
-  });
-});
-if (btnCharacter) btnCharacter.addEventListener("click", () => runAdv(() => m.character()));
-if (btnSelectServer) btnSelectServer.addEventListener("click", () => {
-  const ip = (srvIpEl?.value || "").trim();
-  const port = (srvPortEl?.value || "").toString().trim();
-  // Пытаемся угадать параметры: host/port
-  return runAdv(() => m.selectServer({ host: ip || undefined, port: port || undefined }));
-});
-if (btnPlay) btnPlay.addEventListener("click", () => {
-  const ip = (srvIpEl?.value || "").trim();
-  const port = (srvPortEl?.value || "").toString().trim();
-  return runAdv(() => m.play({ host: ip || undefined, port: port || undefined }));
-});
-if (btnLogout2) btnLogout2.addEventListener("click", () => runAdv(async () => {
-  const res = await m.logout();
-  // сброс локальной сессии
-  localStorage.removeItem("matreshka_session");
-  m.accountId = -1;
-  m.sessionHash = "";
-  return res;
-}));
-
-if (btnLatest) btnLatest.addEventListener("click", () => loadLatestUpdate());
-if (btnFilesList) btnFilesList.addEventListener("click", () => loadFilesList());
-if (btnFilesListSummary) btnFilesListSummary.addEventListener("click", () => {
-  const data = window.__filesListRaw;
-  if (!data) {
-    if (filesListOut) filesListOut.textContent = pretty({error:"Сначала нажми: Загрузить files_list"});
-    return;
+      var s = localStorage.getItem("mat_demo_state_v13");
+      if (s) {
+        var o = JSON.parse(s);
+        if (o && typeof o === "object") {
+          for (var k in o) state[k] = o[k];
+        }
+      }
+    } catch (e) {}
   }
-  if (filesListOut) filesListOut.textContent = pretty(summarizeFilesList(data));
-});
-if (autoUpdateEl) {
-  try {
-    const saved = localStorage.getItem("matreshka_autoUpdate");
-    if (saved !== null) autoUpdateEl.checked = (saved === "1");
-  } catch {}
-  autoUpdateEl.addEventListener("change", () => {
-    try { localStorage.setItem("matreshka_autoUpdate", autoUpdateEl.checked ? "1" : "0"); } catch {}
-  });
-}
-// автозагрузка сведений о последней версии
-if (autoUpdateEl && autoUpdateEl.checked) { loadLatestUpdate(); }
+
+  function saveState() {
+    try { localStorage.setItem("mat_demo_state_v13", JSON.stringify(state)); } catch (e) {}
+  }
+
+  function renderState() {
+    qs("proxyBase").value = state.proxyBase || "";
+    qs("deviceHash").value = state.deviceHash || "";
+    qs("client").value = state.client || "prod";
+    qs("accountId").value = String(state.accountId);
+    qs("sessionHash").value = state.sessionHash || "";
+  }
+
+  function pullStateFromUI() {
+    state.proxyBase = String(qs("proxyBase").value || "").trim();
+    state.deviceHash = String(qs("deviceHash").value || "").trim();
+    state.client = String(qs("client").value || "prod").trim() || "prod";
+    state.accountId = parseInt(qs("accountId").value, 10);
+    if (isNaN(state.accountId)) state.accountId = -1;
+    state.sessionHash = String(qs("sessionHash").value || "").trim();
+  }
+
+  // ---- fetch core ----
+  async function decodeTextSmart(resp) {
+    var buf = await resp.arrayBuffer();
+
+    var textUtf8 = "";
+    try { textUtf8 = new TextDecoder("utf-8").decode(buf); } catch (e) { textUtf8 = ""; }
+
+    var text1251 = "";
+    try { text1251 = new TextDecoder("windows-1251").decode(buf); } catch (e) { text1251 = ""; }
+
+    // If utf8 has lots of replacement chars but 1251 doesn't — prefer 1251
+    var hasBad = (textUtf8.indexOf("\uFFFD") !== -1) || (textUtf8.indexOf("����") !== -1);
+    if (hasBad && text1251 && text1251.indexOf("\uFFFD") === -1) return text1251;
+
+    return textUtf8 || text1251 || "";
+  }
+
+  async function fetchViaProxy(method, url, formObj) {
+    pullStateFromUI();
+    if (!state.proxyBase) {
+      setOut({ error: "proxyBase пустой. Вставь URL воркера: https://xxx.workers.dev/?url=" }, false);
+      return null;
+    }
+
+    var proxyUrl = state.proxyBase + encodeURIComponent(url);
+    var opts = { method: method };
+    if (method === "POST") {
+      opts.headers = { "content-type": "application/x-www-form-urlencoded; charset=utf-8" };
+      opts.body = buildFormBody(formObj || {});
+    }
+
+    var resp;
+    try {
+      resp = await fetch(proxyUrl, opts);
+    } catch (e) {
+      return { ok: false, status: 0, error: String(e) };
+    }
+
+    var contentType = resp.headers.get("content-type") || "";
+    var rawText = await decodeTextSmart(resp);
+
+    // JSON parse try
+    var parsed = null;
+    try { parsed = JSON.parse(rawText); } catch (e) { parsed = null; }
+
+    if (parsed !== null) return parsed;
+
+    return {
+      ok: resp.ok,
+      status: resp.status,
+      contentType: contentType,
+      raw: rawText
+    };
+  }
+
+  function withBaseParams(obj, includeSession) {
+    var o = {};
+    for (var k in obj) o[k] = obj[k];
+
+    o.deviceHash = state.deviceHash;
+    o.client = state.client;
+
+    if (includeSession) {
+      o.accountId = state.accountId;
+      o.sessionHash = state.sessionHash || "";
+    }
+
+    return o;
+  }
+
+  // ---- API wrappers ----
+  async function getUpdate() {
+    var url = state.api + "/update.php?accountId=-1&deviceHash=" + encodeURIComponent(state.deviceHash) + "&client=" + encodeURIComponent(state.client);
+    var res = await fetchViaProxy("GET", url);
+    if (res && res.files_list) qs("filesListUrl").value = res.files_list;
+    setOut(res, true);
+  }
+
+  async function getMain() {
+    var url = state.api + "/api/main.json";
+    var res = await fetchViaProxy("GET", url);
+    setOut(res, true);
+  }
+
+  async function getServersJson() {
+    var url = state.api + "/servers.json";
+    var res = await fetchViaProxy("GET", url);
+    setOut(res, true);
+  }
+
+  async function getFilesList() {
+    var url = String(qs("filesListUrl").value || "").trim();
+    if (!url) { setOut({ error: "files_list URL пустой" }, false); return; }
+    var res = await fetchViaProxy("GET", url);
+    setOut(res, true);
+  }
+
+  async function authEmail(subtype, extra) {
+    var includeSession = qs("authIncludeSession").checked ? true : false;
+    var url = state.api + "/api/Requests/Auth.php";
+
+    var data = withBaseParams({
+      type: "email",
+      subtype: subtype,
+      action: "continue"
+    }, includeSession);
+
+    // extra fields
+    for (var k in (extra || {})) data[k] = extra[k];
+
+    // POST by default
+    var res = await fetchViaProxy("POST", url, data);
+
+    // Try to pickup accountId/sessionHash from common shapes
+    var a0 = null;
+    if (res && res.actions && res.actions[0]) a0 = res.actions[0];
+    if (!a0 && res && res.action) a0 = res.action;
+
+    if (a0 && (a0.account_id !== undefined && a0.account_id !== null)) {
+      state.accountId = a0.account_id;
+      state.sessionHash = a0.session_hash || "";
+      saveState();
+      renderState();
+    }
+
+    setOut(res, true);
+  }
+
+  async function authedGet(path) {
+    pullStateFromUI();
+    if (!state.sessionHash) {
+      setOut({ error: "sessionHash пустой. Нужна авторизация." }, false);
+      return;
+    }
+    var base = state.api + path;
+    var q = buildFormBody(withBaseParams({}, true)); // includes accountId/sessionHash/deviceHash/client
+    var url = base + "?" + q;
+    var res = await fetchViaProxy("GET", url);
+    setOut(res, true);
+  }
+
+  async function selectServer() {
+    pullStateFromUI();
+    if (!state.sessionHash) { setOut({ error: "Нужна авторизация (sessionHash пустой)" }, false); return; }
+    var host = String(qs("srvHost").value || "").trim();
+    var port = String(qs("srvPort").value || "").trim();
+    if (!host || !port) { setOut({ error: "host/port пустые" }, false); return; }
+
+    var url = state.api + "/api/Requests/SelectServer.php";
+    var data = withBaseParams({ host: host, port: port }, true);
+
+    var res = await fetchViaProxy("GET", url + "?" + buildFormBody(data));
+    setOut(res, true);
+  }
+
+  async function play() {
+    pullStateFromUI();
+    var host = String(qs("srvHost").value || "").trim();
+    var port = String(qs("srvPort").value || "").trim();
+    var url = state.api + "/api/Requests/Play.php";
+    var data = withBaseParams({ host: host, port: port }, true);
+    var res = await fetchViaProxy("GET", url + "?" + buildFormBody(data));
+    setOut(res, true);
+  }
+
+  // ---- custom + debug ----
+  async function customSend() {
+    pullStateFromUI();
+    var url = String(qs("customUrl").value || "").trim();
+    if (!url) { setOut({ error: "URL пустой" }, false); return; }
+    var method = String(qs("customMethod").value || "GET");
+    var bodyObj = parseForm(qs("customBody").value || "");
+
+    var res;
+    if (method === "POST") res = await fetchViaProxy("POST", url, bodyObj);
+    else res = await fetchViaProxy("GET", url);
+    setOut(res, true);
+  }
+
+  async function workerDebug() {
+    pullStateFromUI();
+    var url = String(qs("customUrl").value || "").trim();
+    if (!url) { setOut({ error: "URL пустой" }, false); return; }
+    var dbg = state.proxyBase + "debug=1&url=" + encodeURIComponent(url);
+    // We can just fetch dbg directly (already has cors headers)
+    var res;
+    try {
+      var r = await fetch(dbg);
+      res = await r.json();
+      setOut(res, true);
+    } catch (e) {
+      setOut({ error: String(e), hint: "Проверь, что в worker.js включён debug=1" }, false);
+    }
+  }
+
+  // ---- wire up ----
+  loadState();
+  if (!state.deviceHash) state.deviceHash = randDeviceHash();
+  renderState();
+
+  qs("btnSave").onclick = function () { pullStateFromUI(); saveState(); setOut({ ok: true, saved: state }, true); };
+  qs("btnLoad").onclick = function () { loadState(); renderState(); setOut({ ok: true, loaded: state }, true); };
+  qs("btnNewDevice").onclick = function () { state.deviceHash = randDeviceHash(); saveState(); renderState(); setOut({ ok: true, deviceHash: state.deviceHash }, true); };
+
+  qs("btnUpdate").onclick = function () { getUpdate(); };
+  qs("btnMain").onclick = function () { getMain(); };
+  qs("btnServersJson").onclick = function () { getServersJson(); };
+  qs("btnFilesList").onclick = function () { getFilesList(); };
+
+  qs("btnLogin").onclick = function () {
+    var email = String(qs("email").value || "").trim();
+    var pass = String(qs("pass").value || "");
+    authEmail("auth", { email: email, pass: pass });
+  };
+
+  qs("btnRegStart").onclick = function () {
+    var email = String(qs("email").value || "").trim();
+    var pass = String(qs("pass").value || "");
+    authEmail("register", { email: email, pass: pass, repeat_pass: pass });
+  };
+
+  qs("btnRegFinish").onclick = function () {
+    var email = String(qs("email").value || "").trim();
+    var pass = String(qs("pass").value || "");
+    var code = String(qs("code").value || "").trim();
+    authEmail("register_code", { email: email, pass: pass, repeat_pass: pass, code: code });
+  };
+
+  qs("btnServersApi").onclick = function () { authedGet("/api/Requests/Servers.php"); };
+  qs("btnAccount").onclick = function () { authedGet("/api/Requests/AccountDetails.php"); };
+  qs("btnCabinet").onclick = function () { authedGet("/api/Requests/Cabinet.php"); };
+
+  qs("btnSelectServer").onclick = function () { selectServer(); };
+  qs("btnPlay").onclick = function () { play(); };
+
+  qs("btnCustom").onclick = function () { customSend(); };
+  qs("btnDebugUpstream").onclick = function () { workerDebug(); };
+
+  setOut("(ready)", true);
+})();
 </script>
 </body>
 </html>
