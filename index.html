@@ -122,7 +122,31 @@
       <label>Server Port</label>
       <input id="srvPort" type="number" placeholder="7777" />
 
+      <label>Auth type</label>
+      <input id="authType" type="text" value="email" placeholder="email / device / guest (если есть)" />
+
+      <label>Auth subtype</label>
+      <input id="authSubtype" type="text" value="auth" placeholder="auth / register / register_code / ..." />
+
+      <label>Email (необязательно для device/guest)</label>
+      <input id="authEmail" type="email" placeholder="user@example.com" />
+
+      <label>Пароль (если требуется)</label>
+      <input id="authPass" type="password" placeholder="Пароль" />
+
+      <label>Код (для register_code)</label>
+      <input id="authCode" type="text" placeholder="123456" />
+
       <div class="row">
+        <button id="btnAuthCustom" class="primary">Auth (custom)</button>
+      </div>
+
+      <p class="muted">
+        Если в официальном лаунчере есть «Гость», то почти наверняка он получает <code>accountId</code> и <code>sessionHash</code> через <code>Auth.php</code> с другим <code>type</code> (часто <code>device</code>) и/или другим <code>subtype</code>.
+        Попробуй варианты: <code>type=device</code> + <code>subtype=auth</code>, или <code>type=guest</code> + <code>subtype=auth</code>.
+      </p>
+
+<div class="row">
         <button id="btnVerifyAuth" class="primary">VerifyAuth</button>
         <button id="btnCharacter">Character</button>
         <button id="btnSelectServer">SelectServer</button>
@@ -300,6 +324,18 @@ class Matreshka {
     return this._fetchJson(url);
   }
 
+  async authCustom(type, subtype, extra = {}) {
+    const base = {
+      type,
+      subtype,
+      action: "continue",
+      ...extra,
+    };
+    // Auth.php использует те же accountId/sessionHash/deviceHash/client что и другие запросы
+    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams(base));
+    return this._fetchJson(url);
+  }
+
   async getStories() {
     const url = `${this.api}/api/Requests/Stories.php?` + this._q(this._withAuthParams());
     return this._fetchJson(url);
@@ -393,6 +429,12 @@ const btnPlay = document.getElementById("btnPlay");
 const btnCharacter = document.getElementById("btnCharacter");
 const srvIpEl = document.getElementById("srvIp");
 const srvPortEl = document.getElementById("srvPort");
+const authTypeEl = document.getElementById("authType");
+const authSubtypeEl = document.getElementById("authSubtype");
+const authEmailEl = document.getElementById("authEmail");
+const authPassEl = document.getElementById("authPass");
+const authCodeEl = document.getElementById("authCode");
+const btnAuthCustom = document.getElementById("btnAuthCustom");
 const latestEl = document.getElementById("latest");
 const btnLatest = document.getElementById("btnLatest");
 const autoUpdateEl = document.getElementById("autoUpdate");
@@ -653,6 +695,40 @@ async function runAdv(fn){
 }
 
 if (btnVerifyAuth) btnVerifyAuth.addEventListener("click", () => runAdv(() => m.verifyAuth()));
+if (btnAuthCustom) btnAuthCustom.addEventListener("click", () => {
+  const type = (authTypeEl?.value || "").trim() || "email";
+  const subtype = (authSubtypeEl?.value || "").trim() || "auth";
+  const email = (authEmailEl?.value || "").trim();
+  const pass = (authPassEl?.value || "").trim();
+  const code = (authCodeEl?.value || "").trim();
+
+  const extra = {};
+  // Добавляем параметры только если они не пустые
+  if (email) extra.email = email;
+  if (pass) {
+    extra.pass = pass;
+    extra.repeat_pass = pass;
+  }
+  if (code) extra.code = code;
+
+  return runAdv(async () => {
+    const res = await m.authCustom(type, subtype, extra);
+
+    // Попробуем автоматически подхватить сессию из типовых структур ответа
+    try {
+      const a0 = res?.actions?.[0] || res?.action || null;
+      const accountId = a0?.account_id ?? a0?.accountId ?? res?.account_id ?? res?.accountId;
+      const sessionHash = a0?.session_hash ?? a0?.sessionHash ?? res?.session_hash ?? res?.sessionHash;
+      if (accountId !== undefined && accountId !== null) m.accountId = accountId;
+      if (sessionHash !== undefined && sessionHash !== null) m.sessionHash = sessionHash;
+    } catch {}
+
+    saveSession(m);
+    renderStatus(m);
+    setSessionOut(getSessionSnapshot());
+    return res;
+  });
+});
 if (btnCharacter) btnCharacter.addEventListener("click", () => runAdv(() => m.character()));
 if (btnSelectServer) btnSelectServer.addEventListener("click", () => {
   const ip = (srvIpEl?.value || "").trim();
