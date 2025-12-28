@@ -105,9 +105,10 @@
         <button id="btnShowSession" class="primary">Показать сессию</button>
         <button id="btnClearSession">Очистить сессию</button>
         <button id="btnCopySession">Копировать</button>
+        <button id="btnResetDeviceHash" title="Сбросит deviceHash. Старые коды регистрации могут стать недействительными.">Сбросить deviceHash</button>
       </div>
       <p class="muted">
-        Их “токен” — это обычно <code>sessionHash</code> (в ответах часто <code>session_hash</code>) + <code>accountId</code> + <code>deviceHash</code>.
+        Их “токен” — это обычно <code>sessionHash</code> (в ответах часто <code>session_hash</code>) + <code>accountId</code> + <code>deviceHash</code>. Для регистрации <code>deviceHash</code> должен оставаться тем же между «Запросить код» и «Register» (в v8 он сохраняется в localStorage).
       </p>
       <pre id="sessionOut">{}</pre>
     </div>
@@ -172,13 +173,21 @@
  * 2) Нельзя выставить user-agent header
  * 3) Исправлен deviceHash: он должен быть строкой, а не ссылкой на функцию
  */
+function loadDeviceHash(){
+  try { return localStorage.getItem("matreshka_deviceHash") || ""; } catch { return ""; }
+}
+function saveDeviceHash(v){
+  try { localStorage.setItem("matreshka_deviceHash", v || ""); } catch {}
+}
+
 class Matreshka {
   constructor(opts = {}) {
     this.api = opts.api || "https://moblauncher.matrp.ru";
     this.client = opts.client || "prod";
     this.accountId = -1;
     this.sessionHash = "";
-    this.deviceHash = this.generateDeviceHash(); // <-- FIX
+    this.deviceHash = loadDeviceHash() || this.generateDeviceHash();
+    saveDeviceHash(this.deviceHash); // <-- FIX
     // headers оставим, но user-agent браузер всё равно не даст поставить
     this.headers = opts.headers || {};
     // Если нужен прокси: opts.proxyBase = "https://<твоя_функция>/proxy?url="
@@ -222,24 +231,25 @@ class Matreshka {
     const ab = await resp.arrayBuffer();
 
     const tryParse = (text) => {
-      try { return JSON.parse(text); } catch { return null; }
+      try { return { ok: true, value: JSON.parse(text) }; }
+      catch { return { ok: false, value: null }; }
     };
 
     // 1) UTF-8 (по стандарту JSON должен быть UTF-8, но жизнь любит хаос)
     let textUtf8 = new TextDecoder("utf-8").decode(ab);
     let parsed = tryParse(textUtf8);
-    if (parsed !== null) return parsed;
+    if (parsed.ok) return parsed.value;
 
     // 2) Fallback: Windows-1251 (для кириллицы)
     let text1251 = null;
     try {
       text1251 = new TextDecoder("windows-1251").decode(ab);
       parsed = tryParse(text1251);
-      if (parsed !== null) return parsed;
+      if (parsed.ok) return parsed.value;
     } catch {}
 
     // 3) Если не JSON — вернём сырое
-    return { ok: resp.ok, status: resp.status, raw: text1251 ?? textUtf8 };
+    return { ok: resp.ok, status: resp.status, contentType: resp.headers.get(\"content-type\"), raw: (text1251 ?? textUtf8) };
   }
 
   // Публичный хелпер: дернуть любой URL (через прокси, если включен)
@@ -375,6 +385,7 @@ const advOut = document.getElementById("advOut");
 const btnShowSession = document.getElementById("btnShowSession");
 const btnClearSession = document.getElementById("btnClearSession");
 const btnCopySession = document.getElementById("btnCopySession");
+const btnResetDeviceHash = document.getElementById("btnResetDeviceHash");
 const btnVerifyAuth = document.getElementById("btnVerifyAuth");
 const btnLogout2 = document.getElementById("btnLogout");
 const btnSelectServer = document.getElementById("btnSelectServer");
@@ -626,6 +637,14 @@ if (btnClearSession) btnClearSession.addEventListener("click", () => {
 });
 if (btnCopySession) btnCopySession.addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(pretty(getSessionSnapshot())); } catch (e) { alert("Не удалось скопировать: " + e); }
+});
+if (btnResetDeviceHash) btnResetDeviceHash.addEventListener("click", () => {
+  // Внимание: это ломает непройденную регистрацию (код может стать недействительным)
+  m.deviceHash = m.generateDeviceHash();
+  saveDeviceHash(m.deviceHash);
+  renderStatus(m);
+  setSessionOut(getSessionSnapshot());
+  alert("deviceHash сброшен. Если ты ждешь код регистрации — запроси его заново.");
 });
 
 async function runAdv(fn){
