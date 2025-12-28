@@ -97,6 +97,23 @@
   <h3>Ответ</h3>
   <pre id="out">{}</pre>
 
+  <h3>Последняя версия (update.php)</h3>
+  <div class="card">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <div class="muted">
+        Этот эндпоинт обычно работает даже без логина (accountId=-1) и возвращает ссылки на клиент/лаунчер, files_list и архивы.
+      </div>
+      <div class="row" style="align-items:center">
+        <label style="margin:0;display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="autoUpdate" checked />
+          Автозагрузка при открытии
+        </label>
+        <button class="primary" id="btnLatest">Обновить</button>
+      </div>
+    </div>
+    <pre id="latest">{}</pre>
+  </div>
+
 <script>
 /**
  * Matreshka — браузерная адаптация твоего класса.
@@ -252,9 +269,43 @@ const emailEl = document.getElementById("email");
 const passEl  = document.getElementById("password");
 const codeEl  = document.getElementById("code");
 const methodEl = document.getElementById("method");
+const latestEl = document.getElementById("latest");
+const btnLatest = document.getElementById("btnLatest");
+const autoUpdateEl = document.getElementById("autoUpdate");
 
 function pretty(x){ return JSON.stringify(x, null, 2); }
 function setOut(x){ out.textContent = pretty(x); }
+function bytesToGiB(n){
+  const giB = n / (1024*1024*1024);
+  return (Math.round(giB*100)/100) + " GiB";
+}
+
+function summarizeUpdate(data){
+  // Если это не объект с полями версии — покажем как есть
+  if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+
+  const res = {
+    client_version: data.client_version,
+    client_url: data.client_url,
+    launcher_version: data.launcher_version,
+    launcher_url: data.launcher_url,
+    files_list: data.files_list,
+    api: data.api,
+    servers_list: data.servers_list,
+    audio_list: data.audio_list,
+    radio_list: data.radio_list,
+    archives: Array.isArray(data.archives) ? data.archives.map(a => ({
+      type: a.type,
+      size: (typeof a.size === "number") ? bytesToGiB(a.size) : a.size,
+      urls: a.urls
+    })) : data.archives
+  };
+
+  // чистка undefined
+  Object.keys(res).forEach(k => (res[k] === undefined ? delete res[k] : 0));
+  return res;
+}
+
 
 function saveSession(m) {
   const s = { accountId: m.accountId, sessionHash: m.sessionHash, deviceHash: m.deviceHash };
@@ -268,6 +319,17 @@ function loadSession(m) {
     m.sessionHash = s.sessionHash ?? null;
     m.deviceHash = s.deviceHash || m.deviceHash;
   } catch {}
+}
+
+async function loadLatestUpdate(){
+  if (!latestEl) return;
+  latestEl.textContent = pretty({loading:true});
+  try{
+    const data = await m.getUpdate();
+    latestEl.textContent = pretty(summarizeUpdate(data));
+  }catch(e){
+    latestEl.textContent = pretty({error:String(e)});
+  }
 }
 
 function renderStatus(m) {
@@ -342,6 +404,19 @@ document.getElementById("btnCopy").onclick = async () => {
 };
 
 document.getElementById("btnClear").onclick = () => setOut({});
+
+if (btnLatest) btnLatest.addEventListener("click", () => loadLatestUpdate());
+if (autoUpdateEl) {
+  try {
+    const saved = localStorage.getItem("matreshka_autoUpdate");
+    if (saved !== null) autoUpdateEl.checked = (saved === "1");
+  } catch {}
+  autoUpdateEl.addEventListener("change", () => {
+    try { localStorage.setItem("matreshka_autoUpdate", autoUpdateEl.checked ? "1" : "0"); } catch {}
+  });
+}
+// автозагрузка сведений о последней версии
+if (autoUpdateEl && autoUpdateEl.checked) { loadLatestUpdate(); }
 </script>
 </body>
 </html>
