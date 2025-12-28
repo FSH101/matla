@@ -94,6 +94,46 @@
     </div>
   </div>
 
+  <div class="grid">
+    <div class="card">
+      <h3>3) Сессия</h3>
+      <div class="row">
+        <button id="btnShowSession" class="primary">Показать сессию</button>
+        <button id="btnClearSession">Очистить сессию</button>
+        <button id="btnCopySession">Копировать</button>
+      </div>
+      <p class="muted">
+        Их “токен” — это обычно <code>sessionHash</code> (в ответах часто <code>session_hash</code>) + <code>accountId</code> + <code>deviceHash</code>.
+      </p>
+      <pre id="sessionOut">{}</pre>
+    </div>
+
+    <div class="card">
+      <h3>4) Доп. эндпоинты (main.json)</h3>
+
+      <label>Server IP (для SelectServer/Play, если нужно)</label>
+      <input id="srvIp" type="text" placeholder="91.220.80.10" />
+
+      <label>Server Port</label>
+      <input id="srvPort" type="number" placeholder="7777" />
+
+      <div class="row">
+        <button id="btnVerifyAuth" class="primary">VerifyAuth</button>
+        <button id="btnCharacter">Character</button>
+        <button id="btnSelectServer">SelectServer</button>
+        <button id="btnPlay">Play</button>
+        <button id="btnLogout">Logout</button>
+      </div>
+
+      <p class="muted">
+        Точные параметры <code>SelectServer</code>/<code>Play</code> могут отличаться (сервер может ждать id/slot/host/port).
+        Если вернётся ошибка — просто смотри JSON и подстроим параметры.
+      </p>
+
+      <pre id="advOut">{}</pre>
+    </div>
+  </div>
+
   <h3>Ответ</h3>
   <pre id="out">{}</pre>
 
@@ -112,6 +152,12 @@
       </div>
     </div>
     <pre id="latest">{}</pre>
+    <div class="row" style="margin-top:10px;align-items:center">
+      <button id="btnFilesList">Загрузить files_list</button>
+      <button id="btnFilesListSummary">Показать сводку</button>
+      <span class="muted" id="filesListHint"></span>
+    </div>
+    <pre id="filesListOut">{}</pre>
   </div>
 
 <script>
@@ -166,9 +212,35 @@ class Matreshka {
   async _fetchJson(url) {
     const finalUrl = this.proxyBase ? (this.proxyBase + encodeURIComponent(url)) : url;
     const resp = await fetch(finalUrl, { method: "GET", headers: this.headers });
-    const text = await resp.text();
-    // иногда сервер может вернуть не-JSON (HTML/текст) — покажем честно
-    try { return JSON.parse(text); } catch { return { ok: resp.ok, status: resp.status, raw: text }; }
+
+    // ВАЖНО: некоторые их JSON-ы могут быть НЕ в UTF-8 (часто Windows-1251), из-за чего в браузере появляется '������'.
+    // Поэтому читаем как bytes и пробуем декодировать UTF-8 -> fallback windows-1251.
+    const ab = await resp.arrayBuffer();
+
+    const tryParse = (text) => {
+      try { return JSON.parse(text); } catch { return null; }
+    };
+
+    // 1) UTF-8 (по стандарту JSON должен быть UTF-8, но жизнь любит хаос)
+    let textUtf8 = new TextDecoder("utf-8").decode(ab);
+    let parsed = tryParse(textUtf8);
+    if (parsed !== null) return parsed;
+
+    // 2) Fallback: Windows-1251 (для кириллицы)
+    let text1251 = null;
+    try {
+      text1251 = new TextDecoder("windows-1251").decode(ab);
+      parsed = tryParse(text1251);
+      if (parsed !== null) return parsed;
+    } catch {}
+
+    // 3) Если не JSON — вернём сырое
+    return { ok: resp.ok, status: resp.status, raw: text1251 ?? textUtf8 };
+  }
+
+  // Публичный хелпер: дернуть любой URL (через прокси, если включен)
+  async fetchUrl(url) {
+    return this._fetchJson(url);
   }
 
   async login(email, password) {
@@ -259,6 +331,31 @@ class Matreshka {
     const url = `${this.api}/update.php?` + this._q(this._withAuthParams());
     return this._fetchJson(url);
   }
+
+  async verifyAuth() {
+    const url = `${this.api}/api/Requests/VerifyAuth.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+
+  async logout() {
+    const url = `${this.api}/api/Requests/Logout.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+
+  async character(extra = {}) {
+    const url = `${this.api}/api/Requests/Character.php?` + this._q(this._withAuthParams(extra));
+    return this._fetchJson(url);
+  }
+
+  async selectServer(extra = {}) {
+    const url = `${this.api}/api/Requests/SelectServer.php?` + this._q(this._withAuthParams(extra));
+    return this._fetchJson(url);
+  }
+
+  async play(extra = {}) {
+    const url = `${this.api}/api/Requests/Play.php?` + this._q(this._withAuthParams(extra));
+    return this._fetchJson(url);
+  }
 }
 
 // --- UI wiring ---
@@ -269,9 +366,25 @@ const emailEl = document.getElementById("email");
 const passEl  = document.getElementById("password");
 const codeEl  = document.getElementById("code");
 const methodEl = document.getElementById("method");
+const sessionOut = document.getElementById("sessionOut");
+const advOut = document.getElementById("advOut");
+const btnShowSession = document.getElementById("btnShowSession");
+const btnClearSession = document.getElementById("btnClearSession");
+const btnCopySession = document.getElementById("btnCopySession");
+const btnVerifyAuth = document.getElementById("btnVerifyAuth");
+const btnLogout2 = document.getElementById("btnLogout");
+const btnSelectServer = document.getElementById("btnSelectServer");
+const btnPlay = document.getElementById("btnPlay");
+const btnCharacter = document.getElementById("btnCharacter");
+const srvIpEl = document.getElementById("srvIp");
+const srvPortEl = document.getElementById("srvPort");
 const latestEl = document.getElementById("latest");
 const btnLatest = document.getElementById("btnLatest");
 const autoUpdateEl = document.getElementById("autoUpdate");
+const btnFilesList = document.getElementById("btnFilesList");
+const btnFilesListSummary = document.getElementById("btnFilesListSummary");
+const filesListOut = document.getElementById("filesListOut");
+const filesListHint = document.getElementById("filesListHint");
 
 function pretty(x){ return JSON.stringify(x, null, 2); }
 function setOut(x){ out.textContent = pretty(x); }
@@ -307,6 +420,26 @@ function summarizeUpdate(data){
 }
 
 
+function getSessionSnapshot(){
+  return {
+    accountId: m.accountId,
+    sessionHash: m.sessionHash,
+    deviceHash: m.deviceHash,
+    client: m.client,
+    proxyBase: m.proxyBase || null
+  };
+}
+
+function setSessionOut(x){
+  if (!sessionOut) return;
+  sessionOut.textContent = pretty(x);
+}
+
+function setAdvOut(x){
+  if (!advOut) return;
+  advOut.textContent = pretty(x);
+}
+
 function saveSession(m) {
   const s = { accountId: m.accountId, sessionHash: m.sessionHash, deviceHash: m.deviceHash };
   localStorage.setItem("matreshka_session", JSON.stringify(s));
@@ -321,12 +454,85 @@ function loadSession(m) {
   } catch {}
 }
 
+let lastUpdateData = null;
+
+async function loadFilesList(){
+  if (!filesListOut) return;
+  const url = lastUpdateData?.files_list;
+  if (!url) {
+    filesListOut.textContent = pretty({ error: "Нет files_list. Сначала нажми 'Обновить' в update.php." });
+    return;
+  }
+  filesListOut.textContent = pretty({loading:true, url});
+  try{
+    const data = await m.fetchUrl(url);
+    window.__filesListRaw = data; // для отладки/сводки
+    filesListOut.textContent = pretty(data);
+  }catch(e){
+    filesListOut.textContent = pretty({error:String(e), url});
+  }
+}
+
+function summarizeFilesList(data){
+  if (!data || typeof data !== "object") return data;
+
+  // Попробуем угадать структуру: либо массив, либо объект с полем files/items
+  const arr =
+    Array.isArray(data) ? data :
+    Array.isArray(data.files) ? data.files :
+    Array.isArray(data.items) ? data.items :
+    Array.isArray(data.list) ? data.list :
+    null;
+
+  if (!arr) {
+    // неизвестная структура — покажем ключи верхнего уровня
+    return {
+      note: "Не удалось распознать массив файлов. Показываю ключи верхнего уровня.",
+      keys: Object.keys(data).slice(0, 50)
+    };
+  }
+
+  // Подсчеты по расширениям и папкам
+  const extCount = {};
+  const dirCount = {};
+  let sample = [];
+
+  for (let i = 0; i < arr.length; i++) {
+    const it = arr[i];
+    const path = (it?.path || it?.file || it?.name || it?.url || "").toString();
+    if (path) {
+      const parts = path.split("/");
+      const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : "(root)";
+      dirCount[dir] = (dirCount[dir] || 0) + 1;
+
+      const m = path.match(/\.([a-z0-9]+)(\?|$)/i);
+      const ext = m ? m[1].toLowerCase() : "(none)";
+      extCount[ext] = (extCount[ext] || 0) + 1;
+    }
+    if (sample.length < 20) sample.push(it);
+  }
+
+  // Top dirs/exts
+  function top(obj, n=15){
+    return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,v])=>({k,v}));
+  }
+
+  return {
+    total: arr.length,
+    top_extensions: top(extCount, 15),
+    top_dirs: top(dirCount, 15),
+    sample_first_20: sample
+  };
+}
+
 async function loadLatestUpdate(){
   if (!latestEl) return;
   latestEl.textContent = pretty({loading:true});
   try{
     const data = await m.getUpdate();
+    lastUpdateData = data;
     latestEl.textContent = pretty(summarizeUpdate(data));
+    if (filesListHint) filesListHint.textContent = data?.files_list ? (`files_list: ${data.files_list}`) : '';
   }catch(e){
     latestEl.textContent = pretty({error:String(e)});
   }
@@ -405,7 +611,56 @@ document.getElementById("btnCopy").onclick = async () => {
 
 document.getElementById("btnClear").onclick = () => setOut({});
 
+if (btnShowSession) btnShowSession.addEventListener("click", () => setSessionOut(getSessionSnapshot()));
+if (btnClearSession) btnClearSession.addEventListener("click", () => {
+  localStorage.removeItem("matreshka_session");
+  m.accountId = -1;
+  m.sessionHash = null;
+  m.deviceHash = m.generateDeviceHash();
+  renderStatus(m);
+  setSessionOut(getSessionSnapshot());
+});
+if (btnCopySession) btnCopySession.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(pretty(getSessionSnapshot())); } catch (e) { alert("Не удалось скопировать: " + e); }
+});
+
+async function runAdv(fn){
+  try { setAdvOut({loading:true}); const res = await fn(); setAdvOut(res); saveSession(m); renderStatus(m); }
+  catch(e){ setAdvOut({error:String(e)}); }
+}
+
+if (btnVerifyAuth) btnVerifyAuth.addEventListener("click", () => runAdv(() => m.verifyAuth()));
+if (btnCharacter) btnCharacter.addEventListener("click", () => runAdv(() => m.character()));
+if (btnSelectServer) btnSelectServer.addEventListener("click", () => {
+  const ip = (srvIpEl?.value || "").trim();
+  const port = (srvPortEl?.value || "").toString().trim();
+  // Пытаемся угадать параметры: host/port
+  return runAdv(() => m.selectServer({ host: ip || undefined, port: port || undefined }));
+});
+if (btnPlay) btnPlay.addEventListener("click", () => {
+  const ip = (srvIpEl?.value || "").trim();
+  const port = (srvPortEl?.value || "").toString().trim();
+  return runAdv(() => m.play({ host: ip || undefined, port: port || undefined }));
+});
+if (btnLogout2) btnLogout2.addEventListener("click", () => runAdv(async () => {
+  const res = await m.logout();
+  // сброс локальной сессии
+  localStorage.removeItem("matreshka_session");
+  m.accountId = -1;
+  m.sessionHash = null;
+  return res;
+}));
+
 if (btnLatest) btnLatest.addEventListener("click", () => loadLatestUpdate());
+if (btnFilesList) btnFilesList.addEventListener("click", () => loadFilesList());
+if (btnFilesListSummary) btnFilesListSummary.addEventListener("click", () => {
+  const data = window.__filesListRaw;
+  if (!data) {
+    if (filesListOut) filesListOut.textContent = pretty({error:"Сначала нажми: Загрузить files_list"});
+    return;
+  }
+  if (filesListOut) filesListOut.textContent = pretty(summarizeFilesList(data));
+});
 if (autoUpdateEl) {
   try {
     const saved = localStorage.getItem("matreshka_autoUpdate");
