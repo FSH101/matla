@@ -31,7 +31,7 @@
       <h1>Matreshka API (Browser Demo)</h1>
       <div class="small">
         Этот демо-сайт дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует запросы).
-        Для авторизованных запросов ты вручную держишь <span class="pill">accountId</span> и <span class="pill">sessionHash</span>.
+        Для авторизованных запросов вручную держишь <span class="pill">accountId</span> и <span class="pill">sessionHash</span>.
       </div>
     </div>
 
@@ -39,7 +39,7 @@
       <h2>Сессия</h2>
 
       <label>proxyBase (Cloudflare Worker)</label>
-      <input id="proxyBase" type="text" placeholder="https://xxx.workers.dev/?url=" />
+      <input id="proxyBase" type="text" placeholder="https://xxxx.workers.dev/?url=" />
 
       <div class="row">
         <div>
@@ -75,7 +75,7 @@
       </div>
 
       <div class="small">
-        Совет: после обновления GitHub Pages делай <b>Ctrl+F5</b> или открывай в инкогнито — иначе кеш.
+        После обновления GitHub Pages делай <b>Ctrl+F5</b> или открывай в инкогнито — иначе кеш.
       </div>
     </div>
 
@@ -97,7 +97,8 @@
     <div class="card">
       <h2>Email auth</h2>
       <div class="small">
-        Здесь запросы идут через <b>POST</b> (пароль не попадает в URL страницы, но всё равно виден в DevTools / логах прокси).
+        Важно: оригинальный API обычно ждёт <b>GET</b>.
+        Чтобы пароль не светился в URL страницы, мы отправляем его в <b>POST на Worker</b>, а Worker превращает это в <b>GET к апстриму</b>.
       </div>
 
       <div class="row">
@@ -174,13 +175,18 @@
       <label>POST form (key=value&...)</label>
       <textarea id="customBody" placeholder="type=email&subtype=auth&action=continue&email=...&pass=..."></textarea>
 
+      <label style="display:flex; gap:8px; align-items:center; margin:10px 0 0;">
+        <input id="customUpstreamPost" type="checkbox" />
+        <span class="small">Для POST: реально отправлять POST апстриму (иначе Worker преобразует в GET)</span>
+      </label>
+
       <div class="row">
         <button id="btnCustom">Send</button>
         <button id="btnDebugUpstream">Worker debug=1</button>
       </div>
 
       <div class="small">
-        Debug вернёт статус/headers/первые байты ответа апстрима (удобно, когда вместо JSON прилетает HTML или пусто).
+        Debug вернёт status/content-type/location/первые байты ответа апстрима (удобно, когда вместо JSON прилетает HTML или пусто).
       </div>
     </div>
 
@@ -192,7 +198,6 @@
 
 <script>
 (function () {
-  // ---- helpers ----
   function qs(id) { return document.getElementById(id); }
 
   function randDeviceHash() {
@@ -203,7 +208,6 @@
   }
 
   function parseForm(text) {
-    // Accept "k=v&k2=v2" or lines "k=v"
     var obj = {};
     if (!text) return obj;
     var t = String(text).trim();
@@ -243,7 +247,6 @@
     el.className = ok ? "ok" : "bad";
   }
 
-  // ---- session ----
   var state = {
     api: "https://moblauncher.matrp.ru",
     proxyBase: "",
@@ -255,7 +258,7 @@
 
   function loadState() {
     try {
-      var s = localStorage.getItem("mat_demo_state_v13");
+      var s = localStorage.getItem("mat_demo_state_v14");
       if (s) {
         var o = JSON.parse(s);
         if (o && typeof o === "object") {
@@ -266,7 +269,7 @@
   }
 
   function saveState() {
-    try { localStorage.setItem("mat_demo_state_v13", JSON.stringify(state)); } catch (e) {}
+    try { localStorage.setItem("mat_demo_state_v14", JSON.stringify(state)); } catch (e) {}
   }
 
   function renderState() {
@@ -280,13 +283,16 @@
   function pullStateFromUI() {
     state.proxyBase = String(qs("proxyBase").value || "").trim();
     state.deviceHash = String(qs("deviceHash").value || "").trim();
+    if (!state.deviceHash) {
+      state.deviceHash = randDeviceHash();
+      qs("deviceHash").value = state.deviceHash;
+    }
     state.client = String(qs("client").value || "prod").trim() || "prod";
     state.accountId = parseInt(qs("accountId").value, 10);
     if (isNaN(state.accountId)) state.accountId = -1;
     state.sessionHash = String(qs("sessionHash").value || "").trim();
   }
 
-  // ---- fetch core ----
   async function decodeTextSmart(resp) {
     var buf = await resp.arrayBuffer();
 
@@ -296,21 +302,30 @@
     var text1251 = "";
     try { text1251 = new TextDecoder("windows-1251").decode(buf); } catch (e) { text1251 = ""; }
 
-    // If utf8 has lots of replacement chars but 1251 doesn't — prefer 1251
     var hasBad = (textUtf8.indexOf("\uFFFD") !== -1) || (textUtf8.indexOf("����") !== -1);
     if (hasBad && text1251 && text1251.indexOf("\uFFFD") === -1) return text1251;
 
     return textUtf8 || text1251 || "";
   }
 
-  async function fetchViaProxy(method, url, formObj) {
+  async function fetchViaProxy(method, url, formObj, workerParams) {
     pullStateFromUI();
     if (!state.proxyBase) {
-      setOut({ error: "proxyBase пустой. Вставь URL воркера: https://xxx.workers.dev/?url=" }, false);
-      return null;
+      return { ok: false, status: 0, error: "proxyBase пустой. Вставь URL воркера: https://xxxx.workers.dev/?url=" };
     }
 
-    var proxyUrl = state.proxyBase + encodeURIComponent(url);
+    var extra = workerParams ? String(workerParams) : "";
+    var glue = state.proxyBase.indexOf("?") === -1 ? "?" : "";
+    // proxyBase должен заканчиваться на ?url= (или &url=) — мы это не навязываем, но подстрахуемся:
+    var proxyBase = state.proxyBase;
+    if (proxyBase.indexOf("url=") === -1) {
+      // попробуем аккуратно добавить url=
+      proxyBase = proxyBase.replace(/\?$/, "");
+      if (proxyBase.indexOf("?") === -1) proxyBase += "?url=";
+      else proxyBase += "&url=";
+    }
+    var proxyUrl = proxyBase + encodeURIComponent(url) + extra;
+
     var opts = { method: method };
     if (method === "POST") {
       opts.headers = { "content-type": "application/x-www-form-urlencoded; charset=utf-8" };
@@ -328,17 +343,17 @@
     var rawText = await decodeTextSmart(resp);
 
     // JSON parse try
-    var parsed = null;
-    try { parsed = JSON.parse(rawText); } catch (e) { parsed = null; }
+    var parsed;
+    try { parsed = JSON.parse(rawText); }
+    catch (e) {
+      return { ok: resp.ok, status: resp.status, contentType: contentType, raw: rawText };
+    }
 
-    if (parsed !== null) return parsed;
-
-    return {
-      ok: resp.ok,
-      status: resp.status,
-      contentType: contentType,
-      raw: rawText
-    };
+    // Важно: JSON "null" — валидный JSON, но пользователю непонятно. Упакуем.
+    if (parsed === null) {
+      return { ok: resp.ok, status: resp.status, contentType: contentType, parsed: null, raw: rawText };
+    }
+    return parsed;
   }
 
   function withBaseParams(obj, includeSession) {
@@ -352,11 +367,9 @@
       o.accountId = state.accountId;
       o.sessionHash = state.sessionHash || "";
     }
-
     return o;
   }
 
-  // ---- API wrappers ----
   async function getUpdate() {
     var url = state.api + "/update.php?accountId=-1&deviceHash=" + encodeURIComponent(state.deviceHash) + "&client=" + encodeURIComponent(state.client);
     var res = await fetchViaProxy("GET", url);
@@ -378,13 +391,14 @@
 
   async function getFilesList() {
     var url = String(qs("filesListUrl").value || "").trim();
-    if (!url) { setOut({ error: "files_list URL пустой" }, false); return; }
+    if (!url) { setOut({ ok:false, error: "files_list URL пустой" }, false); return; }
     var res = await fetchViaProxy("GET", url);
     setOut(res, true);
   }
 
   async function authEmail(subtype, extra) {
     var includeSession = qs("authIncludeSession").checked ? true : false;
+
     var url = state.api + "/api/Requests/Auth.php";
 
     var data = withBaseParams({
@@ -393,18 +407,17 @@
       action: "continue"
     }, includeSession);
 
-    // extra fields
     for (var k in (extra || {})) data[k] = extra[k];
 
-    // POST by default
+    // Мы делаем POST на Worker, Worker превращает это в GET апстриму (по умолчанию).
     var res = await fetchViaProxy("POST", url, data);
 
-    // Try to pickup accountId/sessionHash from common shapes
+    // Попробуем вытащить accountId/sessionHash из типовых структур
     var a0 = null;
     if (res && res.actions && res.actions[0]) a0 = res.actions[0];
     if (!a0 && res && res.action) a0 = res.action;
 
-    if (a0 && (a0.account_id !== undefined && a0.account_id !== null)) {
+    if (a0 && a0.account_id !== undefined && a0.account_id !== null) {
       state.accountId = a0.account_id;
       state.sessionHash = a0.session_hash || "";
       saveState();
@@ -416,23 +429,23 @@
 
   async function authedGet(path) {
     pullStateFromUI();
-    if (!state.sessionHash) {
-      setOut({ error: "sessionHash пустой. Нужна авторизация." }, false);
-      return;
-    }
+    if (!state.sessionHash) { setOut({ ok:false, error: "sessionHash пустой. Нужна авторизация." }, false); return; }
+
     var base = state.api + path;
-    var q = buildFormBody(withBaseParams({}, true)); // includes accountId/sessionHash/deviceHash/client
+    var q = buildFormBody(withBaseParams({}, true));
     var url = base + "?" + q;
+
     var res = await fetchViaProxy("GET", url);
     setOut(res, true);
   }
 
   async function selectServer() {
     pullStateFromUI();
-    if (!state.sessionHash) { setOut({ error: "Нужна авторизация (sessionHash пустой)" }, false); return; }
+    if (!state.sessionHash) { setOut({ ok:false, error: "Необходимо авторизоваться (sessionHash пустой)" }, false); return; }
+
     var host = String(qs("srvHost").value || "").trim();
     var port = String(qs("srvPort").value || "").trim();
-    if (!host || !port) { setOut({ error: "host/port пустые" }, false); return; }
+    if (!host || !port) { setOut({ ok:false, error: "host/port пустые" }, false); return; }
 
     var url = state.api + "/api/Requests/SelectServer.php";
     var data = withBaseParams({ host: host, port: port }, true);
@@ -445,22 +458,26 @@
     pullStateFromUI();
     var host = String(qs("srvHost").value || "").trim();
     var port = String(qs("srvPort").value || "").trim();
+
     var url = state.api + "/api/Requests/Play.php";
     var data = withBaseParams({ host: host, port: port }, true);
+
     var res = await fetchViaProxy("GET", url + "?" + buildFormBody(data));
     setOut(res, true);
   }
 
-  // ---- custom + debug ----
   async function customSend() {
     pullStateFromUI();
     var url = String(qs("customUrl").value || "").trim();
-    if (!url) { setOut({ error: "URL пустой" }, false); return; }
+    if (!url) { setOut({ ok:false, error: "URL пустой" }, false); return; }
+
     var method = String(qs("customMethod").value || "GET");
     var bodyObj = parseForm(qs("customBody").value || "");
+    var upstreamPost = qs("customUpstreamPost").checked;
 
+    var extra = upstreamPost ? "&upstream=post" : "";
     var res;
-    if (method === "POST") res = await fetchViaProxy("POST", url, bodyObj);
+    if (method === "POST") res = await fetchViaProxy("POST", url, bodyObj, extra);
     else res = await fetchViaProxy("GET", url);
     setOut(res, true);
   }
@@ -468,27 +485,35 @@
   async function workerDebug() {
     pullStateFromUI();
     var url = String(qs("customUrl").value || "").trim();
-    if (!url) { setOut({ error: "URL пустой" }, false); return; }
-    var dbg = state.proxyBase + "debug=1&url=" + encodeURIComponent(url);
-    // We can just fetch dbg directly (already has cors headers)
-    var res;
+    if (!url) { setOut({ ok:false, error: "URL пустой" }, false); return; }
+
+    // debug=1 — это параметр воркера, не апстрима
+    var dbgBase = state.proxyBase;
+    if (dbgBase.indexOf("url=") === -1) {
+      dbgBase = dbgBase.replace(/\?$/, "");
+      if (dbgBase.indexOf("?") === -1) dbgBase += "?url=";
+      else dbgBase += "&url=";
+    }
+    var dbg = dbgBase.replace(/url=$/, "debug=1&url=");
+    var full = dbg + encodeURIComponent(url);
+
     try {
-      var r = await fetch(dbg);
-      res = await r.json();
-      setOut(res, true);
+      var r = await fetch(full);
+      var j = await r.json();
+      setOut(j, true);
     } catch (e) {
-      setOut({ error: String(e), hint: "Проверь, что в worker.js включён debug=1" }, false);
+      setOut({ ok:false, error: String(e), hint: "Проверь, что в worker.js есть debug=1" }, false);
     }
   }
 
-  // ---- wire up ----
+  // ---- wire ----
   loadState();
   if (!state.deviceHash) state.deviceHash = randDeviceHash();
   renderState();
 
-  qs("btnSave").onclick = function () { pullStateFromUI(); saveState(); setOut({ ok: true, saved: state }, true); };
-  qs("btnLoad").onclick = function () { loadState(); renderState(); setOut({ ok: true, loaded: state }, true); };
-  qs("btnNewDevice").onclick = function () { state.deviceHash = randDeviceHash(); saveState(); renderState(); setOut({ ok: true, deviceHash: state.deviceHash }, true); };
+  qs("btnSave").onclick = function () { pullStateFromUI(); saveState(); setOut({ ok:true, saved: state }, true); };
+  qs("btnLoad").onclick = function () { loadState(); renderState(); setOut({ ok:true, loaded: state }, true); };
+  qs("btnNewDevice").onclick = function () { state.deviceHash = randDeviceHash(); saveState(); renderState(); setOut({ ok:true, deviceHash: state.deviceHash }, true); };
 
   qs("btnUpdate").onclick = function () { getUpdate(); };
   qs("btnMain").onclick = function () { getMain(); };
