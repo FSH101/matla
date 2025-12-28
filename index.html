@@ -60,6 +60,10 @@
       </div>
 
       <p class="muted">
+        Подсказка по регистрации: сначала жми <b>«Запросить код»</b>, дождись письма, введи код и только потом <b>Register</b>.
+      </p>
+
+      <p class="muted">
         В браузере нельзя вручную поставить заголовок <code>User-Agent</code> — он игнорируется (ограничение безопасности браузеров).
         Если сервер реально требует мобильный UA, понадобится прокси (см. README).
       </p>
@@ -173,7 +177,7 @@ class Matreshka {
     this.api = opts.api || "https://moblauncher.matrp.ru";
     this.client = opts.client || "prod";
     this.accountId = -1;
-    this.sessionHash = null;
+    this.sessionHash = "";
     this.deviceHash = this.generateDeviceHash(); // <-- FIX
     // headers оставим, но user-agent браузер всё равно не даст поставить
     this.headers = opts.headers || {};
@@ -449,7 +453,7 @@ function loadSession(m) {
     const s = JSON.parse(localStorage.getItem("matreshka_session") || "null");
     if (!s) return;
     m.accountId = s.accountId ?? -1;
-    m.sessionHash = s.sessionHash ?? null;
+    m.sessionHash = (s.sessionHash ?? "");
     m.deviceHash = s.deviceHash || m.deviceHash;
   } catch {}
 }
@@ -595,7 +599,7 @@ document.getElementById("btnCall").onclick = () =>
 document.getElementById("btnLogout").onclick = () => {
   localStorage.removeItem("matreshka_session");
   m.accountId = -1;
-  m.sessionHash = null;
+  m.sessionHash = "";
   m.deviceHash = m.generateDeviceHash();
   renderStatus(m);
   setOut({});
@@ -615,7 +619,7 @@ if (btnShowSession) btnShowSession.addEventListener("click", () => setSessionOut
 if (btnClearSession) btnClearSession.addEventListener("click", () => {
   localStorage.removeItem("matreshka_session");
   m.accountId = -1;
-  m.sessionHash = null;
+  m.sessionHash = "";
   m.deviceHash = m.generateDeviceHash();
   renderStatus(m);
   setSessionOut(getSessionSnapshot());
@@ -647,7 +651,7 @@ if (btnLogout2) btnLogout2.addEventListener("click", () => runAdv(async () => {
   // сброс локальной сессии
   localStorage.removeItem("matreshka_session");
   m.accountId = -1;
-  m.sessionHash = null;
+  m.sessionHash = "";
   return res;
 }));
 
