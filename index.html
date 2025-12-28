@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Matreshka API — браузерный демо-клиент</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;max-width:980px}
+    h1{margin:0 0 8px}
+    .muted{color:#666}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:16px}
+    label{display:block;margin:10px 0 6px}
+    input,select,button,textarea{font:inherit}
+    input,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:10px}
+    button{padding:10px 12px;border:1px solid #ccc;border-radius:10px;background:#fff;cursor:pointer;margin:6px 6px 0 0}
+    button.primary{border-color:#333}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    pre{white-space:pre-wrap;word-break:break-word;background:#0b1020;color:#e6e6e6;padding:12px;border-radius:12px;min-height:160px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .pill{display:inline-block;padding:4px 10px;border:1px solid #ddd;border-radius:999px;font-size:12px;margin-right:8px}
+    .danger{color:#b00020}
+    .ok{color:#0a7}
+    small code{background:#f5f5f5;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h1>Matreshka API — демо из браузера</h1>
+  <div class="muted">
+    Это минимальный сайт, который запускает твой JS-клиент прямо в браузере.
+    <span class="pill" id="status">не авторизован</span>
+    <span class="pill" id="devicePill"></span>
+  </div>
+
+  <p class="danger">
+    Важно: пароль уходит в URL (GET-запрос) — так устроен их API. Не используй реальный пароль на чужих сайтах и не делай это на «чужом» компьютере.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>1) Авторизация / Регистрация</h3>
+
+      <label>Email</label>
+      <input id="email" type="email" placeholder="mail@example.com" autocomplete="username" />
+
+      <label>Пароль</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+
+      <label>Прокси (Cloudflare Worker URL, опционально)</label>
+      <input id="proxy" type="url" placeholder="https://<name>.workers.dev/?url=" />
+
+      <label>Код подтверждения (для регистрации)</label>
+      <input id="code" type="text" placeholder="1234" inputmode="numeric" />
+
+      <div class="row">
+        <button class="primary" id="btnLogin">Login</button>
+        <button id="btnReqCode">Запросить код</button>
+        <button id="btnRegister">Register</button>
+        <button id="btnLogout">Сбросить сессию</button>
+      </div>
+
+      <p class="muted">
+        В браузере нельзя вручную поставить заголовок <code>User-Agent</code> — он игнорируется (ограничение безопасности браузеров).
+        Если сервер реально требует мобильный UA, понадобится прокси (см. README).
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>2) Запросы</h3>
+
+      <label>Метод</label>
+      <select id="method">
+        <option value="getStories">getStories</option>
+        <option value="getServers">getServers</option>
+        <option value="getSocialBonusInfo">getSocialBonusInfo</option>
+        <option value="getAccountDetails">getAccountDetails</option>
+        <option value="getCabinet">getCabinet</option>
+        <option value="getFaq">getFaq</option>
+        <option value="getAudios">getAudios</option>
+        <option value="getRadios">getRadios</option>
+        <option value="getUpdate">getUpdate</option>
+      </select>
+
+      <div class="row">
+        <button class="primary" id="btnCall">Выполнить</button>
+        <button id="btnCopy">Копировать JSON</button>
+        <button id="btnClear">Очистить</button>
+      </div>
+
+      <p class="muted">
+        Если получишь ошибку <code>CORS</code> — это значит, что API не разрешает запросы из браузера напрямую.
+        Тогда включай прокси-режим (README).
+      </p>
+    </div>
+  </div>
+
+  <h3>Ответ</h3>
+  <pre id="out">{}</pre>
+
+<script>
+/**
+ * Matreshka — браузерная адаптация твоего класса.
+ * Отличия от Node-версии:
+ * 1) НЕТ module.exports
+ * 2) Нельзя выставить user-agent header
+ * 3) Исправлен deviceHash: он должен быть строкой, а не ссылкой на функцию
+ */
+class Matreshka {
+  constructor(opts = {}) {
+    this.api = opts.api || "https://moblauncher.matrp.ru";
+    this.client = opts.client || "prod";
+    this.accountId = -1;
+    this.sessionHash = null;
+    this.deviceHash = this.generateDeviceHash(); // <-- FIX
+    // headers оставим, но user-agent браузер всё равно не даст поставить
+    this.headers = opts.headers || {};
+    // Если нужен прокси: opts.proxyBase = "https://<твоя_функция>/proxy?url="
+    this.proxyBase = opts.proxyBase || null;
+  }
+
+  generateDeviceHash() {
+    let hash = "";
+    const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 16; i++) {
+      hash += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return hash;
+  }
+
+  _q(params) {
+    const usp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      usp.set(k, String(v));
+    }
+    return usp.toString();
+  }
+
+  _withAuthParams(extra = {}) {
+    return {
+      accountId: this.accountId,
+      sessionHash: this.sessionHash,
+      deviceHash: this.deviceHash,
+      client: this.client,
+      ...extra
+    };
+  }
+
+  async _fetchJson(url) {
+    const finalUrl = this.proxyBase ? (this.proxyBase + encodeURIComponent(url)) : url;
+    const resp = await fetch(finalUrl, { method: "GET", headers: this.headers });
+    const text = await resp.text();
+    // иногда сервер может вернуть не-JSON (HTML/текст) — покажем честно
+    try { return JSON.parse(text); } catch { return { ok: resp.ok, status: resp.status, raw: text }; }
+  }
+
+  async login(email, password) {
+    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
+      type: "email",
+      subtype: "auth",
+      action: "continue",
+      email,
+      pass: password
+    }));
+    const data = await this._fetchJson(url);
+    // Подстраховка: структура ответа может отличаться
+    const action0 = data?.actions?.[0];
+    if (action0 && ("account_id" in action0)) {
+      this.accountId = action0.account_id;
+      this.sessionHash = action0.session_hash;
+    }
+    return data;
+  }
+
+  async requestVerificationCode(email, password) {
+    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
+      type: "email",
+      subtype: "register",
+      action: "continue",
+      email,
+      pass: password,
+      repeat_pass: password
+    }));
+    return this._fetchJson(url);
+  }
+
+  async register(email, password, verificationCode) {
+    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
+      type: "email",
+      subtype: "register_code",
+      action: "continue",
+      email,
+      pass: password,
+      repeat_pass: password,
+      code: verificationCode
+    }));
+    return this._fetchJson(url);
+  }
+
+  async getStories() {
+    const url = `${this.api}/api/Requests/Stories.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getServers() {
+    const url = `${this.api}/api/Requests/Servers.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getSocialBonusInfo() {
+    const url = `${this.api}/api/Requests/SocialBonusInfo.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getAccountDetails() {
+    const url = `${this.api}/api/Requests/AccountDetails.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getCabinet() {
+    const url = `${this.api}/api/Requests/Cabinet.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async changePassword(password) {
+    const url = `${this.api}/api/Requests/Auth.php?` + this._q(this._withAuthParams({
+      type: "email",
+      subtype: "changepass_old",
+      action: "continue",
+      pass: password
+    }));
+    return this._fetchJson(url);
+  }
+  async getFaq() {
+    const url = `${this.api}/api/Requests/FAQ.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getAudios() {
+    const url = `${this.api}/audio_list.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getRadios() {
+    const url = `${this.api}/radio_list.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+  async getUpdate() {
+    const url = `${this.api}/update.php?` + this._q(this._withAuthParams());
+    return this._fetchJson(url);
+  }
+}
+
+// --- UI wiring ---
+const out = document.getElementById("out");
+const statusEl = document.getElementById("status");
+const devicePill = document.getElementById("devicePill");
+const emailEl = document.getElementById("email");
+const passEl  = document.getElementById("password");
+const codeEl  = document.getElementById("code");
+const methodEl = document.getElementById("method");
+
+function pretty(x){ return JSON.stringify(x, null, 2); }
+function setOut(x){ out.textContent = pretty(x); }
+
+function saveSession(m) {
+  const s = { accountId: m.accountId, sessionHash: m.sessionHash, deviceHash: m.deviceHash };
+  localStorage.setItem("matreshka_session", JSON.stringify(s));
+}
+function loadSession(m) {
+  try {
+    const s = JSON.parse(localStorage.getItem("matreshka_session") || "null");
+    if (!s) return;
+    m.accountId = s.accountId ?? -1;
+    m.sessionHash = s.sessionHash ?? null;
+    m.deviceHash = s.deviceHash || m.deviceHash;
+  } catch {}
+}
+
+function renderStatus(m) {
+  const ok = m.accountId && m.accountId !== -1 && m.sessionHash;
+  statusEl.textContent = ok ? `авторизован (accountId=${m.accountId})` : "не авторизован";
+  statusEl.className = "pill " + (ok ? "ok" : "");
+  devicePill.textContent = `deviceHash=${m.deviceHash}` + (m.proxyBase ? ` | proxy=ON` : ` | proxy=OFF`);
+}
+
+const proxyEl = document.getElementById("proxy");
+// Вставь сюда URL воркера, например: https://<name>.workers.dev/?url=
+const DEFAULT_PROXY_BASE = "";
+const m = new Matreshka({
+  proxyBase: DEFAULT_PROXY_BASE || null
+});
+// Подхватить прокси из localStorage (если уже вводил)
+try {
+  const savedProxy = localStorage.getItem("matreshka_proxyBase");
+  if (savedProxy) {
+    m.proxyBase = savedProxy;
+    proxyEl.value = savedProxy;
+  }
+} catch {}
+// Сохранять прокси при изменении
+proxyEl.addEventListener("change", () => {
+  const v = proxyEl.value.trim();
+  m.proxyBase = v ? v : null;
+  try { localStorage.setItem("matreshka_proxyBase", m.proxyBase || ""); } catch {}
+});
+loadSession(m);
+renderStatus(m);
+
+async function run(fn) {
+  try {
+    setOut({loading:true});
+    const res = await fn();
+    setOut(res);
+    saveSession(m);
+    renderStatus(m);
+  } catch (e) {
+    setOut({ error: String(e), hint: "Если это CORS — смотри README про прокси." });
+  }
+}
+
+document.getElementById("btnLogin").onclick = () =>
+  run(() => m.login(emailEl.value.trim(), passEl.value));
+
+document.getElementById("btnReqCode").onclick = () =>
+  run(() => m.requestVerificationCode(emailEl.value.trim(), passEl.value));
+
+document.getElementById("btnRegister").onclick = () =>
+  run(() => m.register(emailEl.value.trim(), passEl.value, codeEl.value.trim()));
+
+document.getElementById("btnCall").onclick = () =>
+  run(() => m[methodEl.value]());
+
+document.getElementById("btnLogout").onclick = () => {
+  localStorage.removeItem("matreshka_session");
+  m.accountId = -1;
+  m.sessionHash = null;
+  m.deviceHash = m.generateDeviceHash();
+  renderStatus(m);
+  setOut({});
+};
+
+document.getElementById("btnCopy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(out.textContent || "");
+  } catch (e) {
+    alert("Не удалось скопировать: " + e);
+  }
+};
+
+document.getElementById("btnClear").onclick = () => setOut({});
+</script>
+</body>
+</html>
