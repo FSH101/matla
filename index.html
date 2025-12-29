@@ -23,15 +23,16 @@
     .ok { color:#9cffc6; }
     .bad { color:#ffb4b4; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #2b3a52; font-size:12px; opacity:.95; }
+    .muted { opacity:.75; }
   </style>
 </head>
 <body>
   <div class="grid">
     <div class="card">
-      <h1>Matreshka API (Browser Demo)</h1>
+      <h1>Matreshka API (Browser Demo) <span class="pill muted">v16-20251229000657</span></h1>
       <div class="small">
-        Этот демо-сайт дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует запросы).
-        Для авторизованных запросов вручную держишь <span class="pill">accountId</span> и <span class="pill">sessionHash</span>.
+        Демо дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует). Если кнопки вдруг «не нажимаются» — это почти всегда
+        означает, что JavaScript упал (ошибка покажется в Output).
       </div>
     </div>
 
@@ -74,20 +75,18 @@
         <button id="btnNewDevice">New deviceHash</button>
       </div>
 
-      <div class="small">
-        После обновления GitHub Pages делай <b>Ctrl+F5</b> или открывай в инкогнито — иначе кеш.
-      </div>
+      <div class="small">После обновления GitHub Pages делай <b>Ctrl+F5</b> или открывай в инкогнито — иначе кеш.</div>
     </div>
 
     <div class="card">
-      <h2>Публичные конфиги (без авторизации)</h2>
+      <h2>Публичные конфиги</h2>
       <div class="row">
         <button id="btnUpdate">GET update.php</button>
         <button id="btnMain">GET api/main.json</button>
         <button id="btnServersJson">GET servers.json</button>
       </div>
 
-      <label>files_list URL (берётся из update.php или вставь вручную)</label>
+      <label>files_list URL</label>
       <div class="row">
         <input id="filesListUrl" type="text" placeholder="https://moblauncher.matrp.ru/files_list/build1411.json" />
         <button id="btnFilesList">GET files_list</button>
@@ -97,8 +96,8 @@
     <div class="card">
       <h2>Email auth</h2>
       <div class="small">
-        Важно: оригинальный API обычно ждёт <b>GET</b>.
-        Чтобы пароль не светился в URL страницы, мы отправляем его в <b>POST на Worker</b>, а Worker превращает это в <b>GET к апстриму</b>.
+        Браузер шлёт <b>POST</b> на Worker (чтобы пароль не светился в URL страницы). Worker по умолчанию превращает POST‑поля в <b>GET</b> к апстриму,
+        потому что их Auth.php чаще всего ждёт GET.
       </div>
 
       <div class="row">
@@ -113,8 +112,8 @@
       </div>
 
       <div class="row">
-        <button id="btnLogin">Login (type=email, subtype=auth)</button>
-        <button id="btnRegStart">Register (type=email, subtype=register)</button>
+        <button id="btnLogin">Login (email/auth)</button>
+        <button id="btnRegStart">Register (email/register)</button>
       </div>
 
       <div class="row">
@@ -122,7 +121,7 @@
           <label>verification code</label>
           <input id="code" type="text" />
         </div>
-        <button id="btnRegFinish">Register code (subtype=register_code)</button>
+        <button id="btnRegFinish">Register code (email/register_code)</button>
       </div>
 
       <label style="display:flex; gap:8px; align-items:center; margin:10px 0 0;">
@@ -177,16 +176,12 @@
 
       <label style="display:flex; gap:8px; align-items:center; margin:10px 0 0;">
         <input id="customUpstreamPost" type="checkbox" />
-        <span class="small">Для POST: реально отправлять POST апстриму (иначе Worker преобразует в GET)</span>
+        <span class="small">Для POST: реально отправлять POST апстриму (upstream=post). Иначе Worker превратит в GET.</span>
       </label>
 
       <div class="row">
         <button id="btnCustom">Send</button>
         <button id="btnDebugUpstream">Worker debug=1</button>
-      </div>
-
-      <div class="small">
-        Debug вернёт status/content-type/location/первые байты ответа апстрима (удобно, когда вместо JSON прилетает HTML или пусто).
       </div>
     </div>
 
@@ -198,7 +193,19 @@
 
 <script>
 (function () {
+  "use strict";
   function qs(id) { return document.getElementById(id); }
+
+  function setOut(o, ok) {
+    var el = qs("out");
+    try { el.textContent = (typeof o === "string") ? o : JSON.stringify(o, null, 2); }
+    catch (e) { el.textContent = String(o); }
+    el.className = ok ? "ok" : "bad";
+  }
+
+  window.addEventListener("error", function (ev) {
+    setOut({ ok:false, error:"JS error", message: ev.message, filename: ev.filename, lineno: ev.lineno, colno: ev.colno }, false);
+  });
 
   function randDeviceHash() {
     var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -212,8 +219,8 @@
     if (!text) return obj;
     var t = String(text).trim();
     if (!t) return obj;
-
-    var parts = t.indexOf("&") !== -1 ? t.split("&") : t.split(/\n+/);
+    var parts = (t.indexOf("&") !== -1) ? t.split("&") : t.split(/
++/);
     for (var i = 0; i < parts.length; i++) {
       var p = String(parts[i] || "").trim();
       if (!p) continue;
@@ -237,14 +244,25 @@
     return parts.join("&");
   }
 
-  function setOut(o, ok) {
-    var el = qs("out");
-    try {
-      el.textContent = (typeof o === "string") ? o : JSON.stringify(o, null, 2);
-    } catch (e) {
-      el.textContent = String(o);
+  function normalizeProxyBase(base) {
+    var b = String(base || "").trim();
+    if (!b) return "";
+    if (b.indexOf("url=") === -1) {
+      if (b.indexOf("?") === -1) b += "?url=";
+      else b += "&url=";
+      return b;
     }
-    el.className = ok ? "ok" : "bad";
+    return b;
+  }
+
+  async function decodeTextSmart(resp) {
+    var buf = await resp.arrayBuffer();
+    var t1 = "", t2 = "";
+    try { t1 = new TextDecoder("utf-8").decode(buf); } catch (e) {}
+    try { t2 = new TextDecoder("windows-1251").decode(buf); } catch (e) {}
+    var bad = (t1.indexOf("�") !== -1) || (t1.indexOf("����") !== -1);
+    if (bad && t2 && t2.indexOf("�") === -1) return t2;
+    return t1 || t2 || "";
   }
 
   var state = {
@@ -258,18 +276,16 @@
 
   function loadState() {
     try {
-      var s = localStorage.getItem("mat_demo_state_v14");
+      var s = localStorage.getItem("mat_demo_state_v16");
       if (s) {
         var o = JSON.parse(s);
-        if (o && typeof o === "object") {
-          for (var k in o) state[k] = o[k];
-        }
+        if (o && typeof o === "object") for (var k in o) state[k] = o[k];
       }
     } catch (e) {}
   }
 
   function saveState() {
-    try { localStorage.setItem("mat_demo_state_v14", JSON.stringify(state)); } catch (e) {}
+    try { localStorage.setItem("mat_demo_state_v16", JSON.stringify(state)); } catch (e) {}
   }
 
   function renderState() {
@@ -281,50 +297,35 @@
   }
 
   function pullStateFromUI() {
-    state.proxyBase = String(qs("proxyBase").value || "").trim();
+    state.proxyBase = normalizeProxyBase(qs("proxyBase").value);
     state.deviceHash = String(qs("deviceHash").value || "").trim();
-    if (!state.deviceHash) {
-      state.deviceHash = randDeviceHash();
-      qs("deviceHash").value = state.deviceHash;
-    }
+    if (!state.deviceHash) state.deviceHash = randDeviceHash();
+    qs("deviceHash").value = state.deviceHash;
+
     state.client = String(qs("client").value || "prod").trim() || "prod";
     state.accountId = parseInt(qs("accountId").value, 10);
     if (isNaN(state.accountId)) state.accountId = -1;
     state.sessionHash = String(qs("sessionHash").value || "").trim();
   }
 
-  async function decodeTextSmart(resp) {
-    var buf = await resp.arrayBuffer();
-
-    var textUtf8 = "";
-    try { textUtf8 = new TextDecoder("utf-8").decode(buf); } catch (e) { textUtf8 = ""; }
-
-    var text1251 = "";
-    try { text1251 = new TextDecoder("windows-1251").decode(buf); } catch (e) { text1251 = ""; }
-
-    var hasBad = (textUtf8.indexOf("\uFFFD") !== -1) || (textUtf8.indexOf("����") !== -1);
-    if (hasBad && text1251 && text1251.indexOf("\uFFFD") === -1) return text1251;
-
-    return textUtf8 || text1251 || "";
+  function withBaseParams(obj, includeSession) {
+    var o = {};
+    for (var k in obj) o[k] = obj[k];
+    o.deviceHash = state.deviceHash;
+    o.client = state.client;
+    if (includeSession) {
+      o.accountId = state.accountId;
+      o.sessionHash = state.sessionHash || "";
+    }
+    return o;
   }
 
-  async function fetchViaProxy(method, url, formObj, workerParams) {
+  async function fetchViaProxy(method, url, formObj, workerExtraParams) {
     pullStateFromUI();
-    if (!state.proxyBase) {
-      return { ok: false, status: 0, error: "proxyBase пустой. Вставь URL воркера: https://xxxx.workers.dev/?url=" };
-    }
+    if (!state.proxyBase) return { ok:false, status:0, error:"proxyBase пустой" };
 
-    var extra = workerParams ? String(workerParams) : "";
-    var glue = state.proxyBase.indexOf("?") === -1 ? "?" : "";
-    // proxyBase должен заканчиваться на ?url= (или &url=) — мы это не навязываем, но подстрахуемся:
-    var proxyBase = state.proxyBase;
-    if (proxyBase.indexOf("url=") === -1) {
-      // попробуем аккуратно добавить url=
-      proxyBase = proxyBase.replace(/\?$/, "");
-      if (proxyBase.indexOf("?") === -1) proxyBase += "?url=";
-      else proxyBase += "&url=";
-    }
-    var proxyUrl = proxyBase + encodeURIComponent(url) + extra;
+    var extra = String(workerExtraParams || "");
+    var workerUrl = state.proxyBase + encodeURIComponent(url) + extra;
 
     var opts = { method: method };
     if (method === "POST") {
@@ -333,41 +334,19 @@
     }
 
     var resp;
-    try {
-      resp = await fetch(proxyUrl, opts);
-    } catch (e) {
-      return { ok: false, status: 0, error: String(e) };
-    }
+    try { resp = await fetch(workerUrl, opts); }
+    catch (e) { return { ok:false, status:0, error:String(e) }; }
 
     var contentType = resp.headers.get("content-type") || "";
     var rawText = await decodeTextSmart(resp);
 
-    // JSON parse try
-    var parsed;
-    try { parsed = JSON.parse(rawText); }
-    catch (e) {
+    try {
+      var parsed = JSON.parse(rawText);
+      if (parsed === null) return { ok: resp.ok, status: resp.status, contentType: contentType, parsed: null, raw: rawText };
+      return parsed;
+    } catch (e) {
       return { ok: resp.ok, status: resp.status, contentType: contentType, raw: rawText };
     }
-
-    // Важно: JSON "null" — валидный JSON, но пользователю непонятно. Упакуем.
-    if (parsed === null) {
-      return { ok: resp.ok, status: resp.status, contentType: contentType, parsed: null, raw: rawText };
-    }
-    return parsed;
-  }
-
-  function withBaseParams(obj, includeSession) {
-    var o = {};
-    for (var k in obj) o[k] = obj[k];
-
-    o.deviceHash = state.deviceHash;
-    o.client = state.client;
-
-    if (includeSession) {
-      o.accountId = state.accountId;
-      o.sessionHash = state.sessionHash || "";
-    }
-    return o;
   }
 
   async function getUpdate() {
@@ -377,212 +356,139 @@
     setOut(res, true);
   }
 
-  async function getMain() {
-    var url = state.api + "/api/main.json";
-    var res = await fetchViaProxy("GET", url);
-    setOut(res, true);
-  }
-
-  async function getServersJson() {
-    var url = state.api + "/servers.json";
-    var res = await fetchViaProxy("GET", url);
-    setOut(res, true);
-  }
+  async function getMain() { setOut(await fetchViaProxy("GET", state.api + "/api/main.json"), true); }
+  async function getServersJson() { setOut(await fetchViaProxy("GET", state.api + "/servers.json"), true); }
 
   async function getFilesList() {
     var url = String(qs("filesListUrl").value || "").trim();
-    if (!url) { setOut({ ok:false, error: "files_list URL пустой" }, false); return; }
-    var res = await fetchViaProxy("GET", url);
-    setOut(res, true);
+    if (!url) return setOut({ ok:false, error:"files_list URL пустой" }, false);
+    setOut(await fetchViaProxy("GET", url), true);
   }
 
   async function authEmail(subtype, extra) {
     var includeSession = qs("authIncludeSession").checked ? true : false;
-
     var url = state.api + "/api/Requests/Auth.php";
 
-    var data = withBaseParams({
-      type: "email",
-      subtype: subtype,
-      action: "continue"
-    }, includeSession);
-
+    var data = withBaseParams({ type:"email", subtype: subtype, action:"continue" }, includeSession);
     for (var k in (extra || {})) data[k] = extra[k];
 
-    // Мы делаем POST на Worker, Worker превращает это в GET апстриму (по умолчанию).
     var res = await fetchViaProxy("POST", url, data);
 
-    // Попробуем вытащить accountId/sessionHash из типовых структур
-    var a0 = null;
-    if (res && res.actions && res.actions[0]) a0 = res.actions[0];
-    if (!a0 && res && res.action) a0 = res.action;
-
-    if (a0 && a0.account_id !== undefined && a0.account_id !== null) {
-      state.accountId = a0.account_id;
-      state.sessionHash = a0.session_hash || "";
-      saveState();
-      renderState();
-    }
+    try {
+      var a0 = res && res.actions && res.actions[0] ? res.actions[0] : null;
+      if (a0 && a0.account_id !== undefined && a0.account_id !== null) {
+        state.accountId = a0.account_id;
+        state.sessionHash = a0.session_hash || "";
+        saveState(); renderState();
+      }
+    } catch (e) {}
 
     setOut(res, true);
   }
 
   async function authedGet(path) {
     pullStateFromUI();
-    if (!state.sessionHash) { setOut({ ok:false, error: "sessionHash пустой. Нужна авторизация." }, false); return; }
-
+    if (!state.sessionHash) return setOut({ ok:false, error:"sessionHash пустой — нужна авторизация" }, false);
     var base = state.api + path;
-    var q = buildFormBody(withBaseParams({}, true));
-    var url = base + "?" + q;
-
-    var res = await fetchViaProxy("GET", url);
-    setOut(res, true);
+    var url = base + "?" + buildFormBody(withBaseParams({}, true));
+    setOut(await fetchViaProxy("GET", url), true);
   }
 
   async function selectServer() {
     pullStateFromUI();
-    if (!state.sessionHash) { setOut({ ok:false, error: "Необходимо авторизоваться (sessionHash пустой)" }, false); return; }
-
+    if (!state.sessionHash) return setOut({ ok:false, error:"Необходимо авторизоваться (sessionHash пустой)" }, false);
     var host = String(qs("srvHost").value || "").trim();
     var port = String(qs("srvPort").value || "").trim();
-    if (!host || !port) { setOut({ ok:false, error: "host/port пустые" }, false); return; }
+    if (!host || !port) return setOut({ ok:false, error:"host/port пустые" }, false);
 
     var url = state.api + "/api/Requests/SelectServer.php";
-    var data = withBaseParams({ host: host, port: port }, true);
-
-    var res = await fetchViaProxy("GET", url + "?" + buildFormBody(data));
-    setOut(res, true);
+    var q = buildFormBody(withBaseParams({ host: host, port: port }, true));
+    setOut(await fetchViaProxy("GET", url + "?" + q), true);
   }
 
   async function play() {
     pullStateFromUI();
     var host = String(qs("srvHost").value || "").trim();
     var port = String(qs("srvPort").value || "").trim();
-
     var url = state.api + "/api/Requests/Play.php";
-    var data = withBaseParams({ host: host, port: port }, true);
-
-    var res = await fetchViaProxy("GET", url + "?" + buildFormBody(data));
-    setOut(res, true);
+    var q = buildFormBody(withBaseParams({ host: host, port: port }, true));
+    setOut(await fetchViaProxy("GET", url + "?" + q), true);
   }
 
   async function customSend() {
     pullStateFromUI();
     var url = String(qs("customUrl").value || "").trim();
-    if (!url) { setOut({ ok:false, error: "URL пустой" }, false); return; }
+    if (!url) return setOut({ ok:false, error:"URL пустой" }, false);
 
     var method = String(qs("customMethod").value || "GET");
     var bodyObj = parseForm(qs("customBody").value || "");
     var upstreamPost = qs("customUpstreamPost").checked;
-
     var extra = upstreamPost ? "&upstream=post" : "";
-    var res;
-    if (method === "POST") res = await fetchViaProxy("POST", url, bodyObj, extra);
-    else res = await fetchViaProxy("GET", url);
-    setOut(res, true);
+
+    if (method === "POST") setOut(await fetchViaProxy("POST", url, bodyObj, extra), true);
+    else setOut(await fetchViaProxy("GET", url), true);
   }
 
   async function workerDebug() {
     pullStateFromUI();
     var url = String(qs("customUrl").value || "").trim();
-    if (!url) { setOut({ ok:false, error: "URL пустой" }, false); return; }
+    if (!url) return setOut({ ok:false, error:"URL пустой" }, false);
 
     var method = String(qs("customMethod").value || "GET");
     var bodyObj = parseForm(qs("customBody").value || "");
     var upstreamPost = qs("customUpstreamPost").checked;
+    var extra = "&debug=1" + (upstreamPost ? "&upstream=post" : "");
 
-    // Собираем worker URL с debug=1 (и опционально upstream=post)
-    var base = state.proxyBase || "";
-    if (!base) { setOut({ ok:false, error: "proxyBase пустой" }, false); return; }
-
-    // гарантируем наличие url=
-    var proxyBase = base;
-    if (proxyBase.indexOf("url=") === -1) {
-      proxyBase = proxyBase.replace(/\?$/, "");
-      if (proxyBase.indexOf("?") === -1) proxyBase += "?url=";
-      else proxyBase += "&url=";
-    }
-
-    // добавим debug=1 ПЕРЕД url=
-    var dbgBase = proxyBase.replace(/url=$/, "debug=1&url=");
-    if (dbgBase === proxyBase) {
-      // если url= не в конце (не идеально задано proxyBase), просто допишем debug=1&
-      dbgBase = proxyBase.replace("url=", "debug=1&url=");
-    }
-
-    var extra = "";
-    if (upstreamPost) extra = "&upstream=post";
-    var workerUrl = dbgBase + encodeURIComponent(url) + extra;
-
-    try {
-      var opts = { method: method };
-      if (method === "POST") {
-        opts.headers = { "content-type": "application/x-www-form-urlencoded; charset=utf-8" };
-        opts.body = buildFormBody(bodyObj);
-      }
-      var r = await fetch(workerUrl, opts);
-      var j = await r.json();
-      setOut(j, true);
-    } catch (e) {
-      setOut({ ok:false, error: String(e), hint: "Debug режим должен вернуть JSON. Если не вернул — проверь worker.js" }, false);
-    }
-  }
-    var dbg = dbgBase.replace(/url=$/, "debug=1&url=");
-    var full = dbg + encodeURIComponent(url);
-
-    try {
-      var r = await fetch(full);
-      var j = await r.json();
-      setOut(j, true);
-    } catch (e) {
-      setOut({ ok:false, error: String(e), hint: "Проверь, что в worker.js есть debug=1" }, false);
-    }
+    if (method === "POST") setOut(await fetchViaProxy("POST", url, bodyObj, extra), true);
+    else setOut(await fetchViaProxy("GET", url, null, extra), true);
   }
 
-  // ---- wire ----
+  function bind() {
+    qs("btnSave").addEventListener("click", function () { pullStateFromUI(); saveState(); setOut({ ok:true, saved: state }, true); });
+    qs("btnLoad").addEventListener("click", function () { loadState(); renderState(); setOut({ ok:true, loaded: state }, true); });
+    qs("btnNewDevice").addEventListener("click", function () { state.deviceHash = randDeviceHash(); saveState(); renderState(); setOut({ ok:true, deviceHash: state.deviceHash }, true); });
+
+    qs("btnUpdate").addEventListener("click", getUpdate);
+    qs("btnMain").addEventListener("click", getMain);
+    qs("btnServersJson").addEventListener("click", getServersJson);
+    qs("btnFilesList").addEventListener("click", getFilesList);
+
+    qs("btnLogin").addEventListener("click", function () {
+      var email = String(qs("email").value || "").trim();
+      var pass = String(qs("pass").value || "");
+      authEmail("auth", { email: email, pass: pass });
+    });
+
+    qs("btnRegStart").addEventListener("click", function () {
+      var email = String(qs("email").value || "").trim();
+      var pass = String(qs("pass").value || "");
+      authEmail("register", { email: email, pass: pass, repeat_pass: pass });
+    });
+
+    qs("btnRegFinish").addEventListener("click", function () {
+      var email = String(qs("email").value || "").trim();
+      var pass = String(qs("pass").value || "");
+      var code = String(qs("code").value || "").trim();
+      authEmail("register_code", { email: email, pass: pass, repeat_pass: pass, code: code });
+    });
+
+    qs("btnServersApi").addEventListener("click", function(){ authedGet("/api/Requests/Servers.php"); });
+    qs("btnAccount").addEventListener("click", function(){ authedGet("/api/Requests/AccountDetails.php"); });
+    qs("btnCabinet").addEventListener("click", function(){ authedGet("/api/Requests/Cabinet.php"); });
+
+    qs("btnSelectServer").addEventListener("click", selectServer);
+    qs("btnPlay").addEventListener("click", play);
+
+    qs("btnCustom").addEventListener("click", customSend);
+    qs("btnDebugUpstream").addEventListener("click", workerDebug);
+
+    setOut("(ready)", true);
+  }
+
   loadState();
   if (!state.deviceHash) state.deviceHash = randDeviceHash();
   renderState();
-
-  qs("btnSave").onclick = function () { pullStateFromUI(); saveState(); setOut({ ok:true, saved: state }, true); };
-  qs("btnLoad").onclick = function () { loadState(); renderState(); setOut({ ok:true, loaded: state }, true); };
-  qs("btnNewDevice").onclick = function () { state.deviceHash = randDeviceHash(); saveState(); renderState(); setOut({ ok:true, deviceHash: state.deviceHash }, true); };
-
-  qs("btnUpdate").onclick = function () { getUpdate(); };
-  qs("btnMain").onclick = function () { getMain(); };
-  qs("btnServersJson").onclick = function () { getServersJson(); };
-  qs("btnFilesList").onclick = function () { getFilesList(); };
-
-  qs("btnLogin").onclick = function () {
-    var email = String(qs("email").value || "").trim();
-    var pass = String(qs("pass").value || "");
-    authEmail("auth", { email: email, pass: pass });
-  };
-
-  qs("btnRegStart").onclick = function () {
-    var email = String(qs("email").value || "").trim();
-    var pass = String(qs("pass").value || "");
-    authEmail("register", { email: email, pass: pass, repeat_pass: pass });
-  };
-
-  qs("btnRegFinish").onclick = function () {
-    var email = String(qs("email").value || "").trim();
-    var pass = String(qs("pass").value || "");
-    var code = String(qs("code").value || "").trim();
-    authEmail("register_code", { email: email, pass: pass, repeat_pass: pass, code: code });
-  };
-
-  qs("btnServersApi").onclick = function () { authedGet("/api/Requests/Servers.php"); };
-  qs("btnAccount").onclick = function () { authedGet("/api/Requests/AccountDetails.php"); };
-  qs("btnCabinet").onclick = function () { authedGet("/api/Requests/Cabinet.php"); };
-
-  qs("btnSelectServer").onclick = function () { selectServer(); };
-  qs("btnPlay").onclick = function () { play(); };
-
-  qs("btnCustom").onclick = function () { customSend(); };
-  qs("btnDebugUpstream").onclick = function () { workerDebug(); };
-
-  setOut("(ready)", true);
+  bind();
 })();
 </script>
 </body>
