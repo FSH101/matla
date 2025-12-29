@@ -29,7 +29,7 @@
 <body>
   <div class="grid">
     <div class="card">
-      <h1>Matreshka API (Browser Demo) <span class="pill muted">v16-20251229000657</span></h1>
+      <h1>Matreshka API (Browser Demo) <span class="pill muted">v17-20251229000957</span></h1>
       <div class="small">
         Демо дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует). Если кнопки вдруг «не нажимаются» — это почти всегда
         означает, что JavaScript упал (ошибка покажется в Output).
@@ -219,8 +219,7 @@
     if (!text) return obj;
     var t = String(text).trim();
     if (!t) return obj;
-    var parts = (t.indexOf("&") !== -1) ? t.split("&") : t.split(/
-+/);
+    var parts = (t.indexOf("&") !== -1) ? t.split("&") : t.split(/\n+/);
     for (var i = 0; i < parts.length; i++) {
       var p = String(parts[i] || "").trim();
       if (!p) continue;
