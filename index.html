@@ -487,13 +487,46 @@
     var url = String(qs("customUrl").value || "").trim();
     if (!url) { setOut({ ok:false, error: "URL пустой" }, false); return; }
 
-    // debug=1 — это параметр воркера, не апстрима
-    var dbgBase = state.proxyBase;
-    if (dbgBase.indexOf("url=") === -1) {
-      dbgBase = dbgBase.replace(/\?$/, "");
-      if (dbgBase.indexOf("?") === -1) dbgBase += "?url=";
-      else dbgBase += "&url=";
+    var method = String(qs("customMethod").value || "GET");
+    var bodyObj = parseForm(qs("customBody").value || "");
+    var upstreamPost = qs("customUpstreamPost").checked;
+
+    // Собираем worker URL с debug=1 (и опционально upstream=post)
+    var base = state.proxyBase || "";
+    if (!base) { setOut({ ok:false, error: "proxyBase пустой" }, false); return; }
+
+    // гарантируем наличие url=
+    var proxyBase = base;
+    if (proxyBase.indexOf("url=") === -1) {
+      proxyBase = proxyBase.replace(/\?$/, "");
+      if (proxyBase.indexOf("?") === -1) proxyBase += "?url=";
+      else proxyBase += "&url=";
     }
+
+    // добавим debug=1 ПЕРЕД url=
+    var dbgBase = proxyBase.replace(/url=$/, "debug=1&url=");
+    if (dbgBase === proxyBase) {
+      // если url= не в конце (не идеально задано proxyBase), просто допишем debug=1&
+      dbgBase = proxyBase.replace("url=", "debug=1&url=");
+    }
+
+    var extra = "";
+    if (upstreamPost) extra = "&upstream=post";
+    var workerUrl = dbgBase + encodeURIComponent(url) + extra;
+
+    try {
+      var opts = { method: method };
+      if (method === "POST") {
+        opts.headers = { "content-type": "application/x-www-form-urlencoded; charset=utf-8" };
+        opts.body = buildFormBody(bodyObj);
+      }
+      var r = await fetch(workerUrl, opts);
+      var j = await r.json();
+      setOut(j, true);
+    } catch (e) {
+      setOut({ ok:false, error: String(e), hint: "Debug режим должен вернуть JSON. Если не вернул — проверь worker.js" }, false);
+    }
+  }
     var dbg = dbgBase.replace(/url=$/, "debug=1&url=");
     var full = dbg + encodeURIComponent(url);
 
