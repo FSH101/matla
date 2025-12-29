@@ -29,7 +29,7 @@
 <body>
   <div class="grid">
     <div class="card">
-      <h1>Matreshka API (Browser Demo) <span class="pill muted">v17-20251229000957</span></h1>
+      <h1>Matreshka API (Browser Demo) <span class="pill muted">v18-20251229001345</span></h1>
       <div class="small">
         Демо дергает публичные URL через Cloudflare Worker‑прокси (иначе CORS блокирует). Если кнопки вдруг «не нажимаются» — это почти всегда
         означает, что JavaScript упал (ошибка покажется в Output).
@@ -125,7 +125,7 @@
       </div>
 
       <label style="display:flex; gap:8px; align-items:center; margin:10px 0 0;">
-        <input id="authIncludeSession" type="checkbox" />
+        <input id="authIncludeSession" type="checkbox" checked />
         <span class="small">Добавлять accountId/sessionHash в Auth (обычно не нужно)</span>
       </label>
     </div>
@@ -206,6 +206,14 @@
   window.addEventListener("error", function (ev) {
     setOut({ ok:false, error:"JS error", message: ev.message, filename: ev.filename, lineno: ev.lineno, colno: ev.colno }, false);
   });
+
+  function sanitizeEmail(s) {
+    return String(s || "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .replace(/\s+/g, "")
+      .trim()
+      .toLowerCase();
+  }
 
   function randDeviceHash() {
     var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -365,10 +373,15 @@
   }
 
   async function authEmail(subtype, extra) {
-    var includeSession = qs("authIncludeSession").checked ? true : false;
+    var includeSession = qs("authIncludeSession").checked ? true : false; // если включено — добавляем accountId/sessionHash (даже -1/пусто)
     var url = state.api + "/api/Requests/Auth.php";
 
     var data = withBaseParams({ type:"email", subtype: subtype, action:"continue" }, includeSession);
+    if (includeSession) {
+      // Важно: лаунчер обычно шлёт эти поля всегда; даже если sessionHash пустой.
+      if (data.accountId === undefined || data.accountId === null || isNaN(parseInt(String(data.accountId), 10))) data.accountId = -1;
+      if (data.sessionHash === undefined || data.sessionHash === null) data.sessionHash = "";
+    }
     for (var k in (extra || {})) data[k] = extra[k];
 
     var res = await fetchViaProxy("POST", url, data);
@@ -453,19 +466,19 @@
     qs("btnFilesList").addEventListener("click", getFilesList);
 
     qs("btnLogin").addEventListener("click", function () {
-      var email = String(qs("email").value || "").trim();
+      var email = sanitizeEmail(qs("email").value);
       var pass = String(qs("pass").value || "");
       authEmail("auth", { email: email, pass: pass });
     });
 
     qs("btnRegStart").addEventListener("click", function () {
-      var email = String(qs("email").value || "").trim();
+      var email = sanitizeEmail(qs("email").value);
       var pass = String(qs("pass").value || "");
       authEmail("register", { email: email, pass: pass, repeat_pass: pass });
     });
 
     qs("btnRegFinish").addEventListener("click", function () {
-      var email = String(qs("email").value || "").trim();
+      var email = sanitizeEmail(qs("email").value);
       var pass = String(qs("pass").value || "");
       var code = String(qs("code").value || "").trim();
       authEmail("register_code", { email: email, pass: pass, repeat_pass: pass, code: code });
